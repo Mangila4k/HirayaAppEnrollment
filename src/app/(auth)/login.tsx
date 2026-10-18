@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabase/client';
-import { colors, spacing, typography } from '@/styles';
+import { spacing, typography } from '@/styles';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Href, useRouter } from 'expo-router';
@@ -7,6 +7,7 @@ import { useState } from 'react';
 import {
   ActivityIndicator,
   Image,
+  ImageBackground,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -17,25 +18,23 @@ import {
   View,
 } from 'react-native';
 
-// ============================================================
-// 🔽 YOUR LOGO IS HERE 🔽
-// The logo is imported from assets/images/logo.jpg
-// (Make sure @assets/* is mapped in tsconfig.json — see note above)
-// ============================================================
-import SchoolLogo from '@assets/images/logo.jpg';
+import SchoolLogo from '@assets/images/plsnhslogo.jpg';
+
+const MATATAG_BG = require('@assets/images/matatag-bg.jpg');
 
 type UserRole = 'admin' | 'registrar' | 'teacher' | 'student' | 'parent';
 
-// ===== Neumorphic palette =====
-const NEU = {
-  bg: '#E8EDF2',
-  bgDark: '#D1D9E6',
-  lightShadow: '#FFFFFF',
-  darkShadow: '#A3B1C6',
-  text: '#2E3A4D',
-  textMuted: '#7A8699',
-  textFaint: '#A0ACBE',
-  accent: '#4C6FFF',
+const THEME = {
+  royalBlue: '#1E3A8A',
+  royalBlueLight: '#2D4BA8',
+  royalBlueDark: '#152C6B',
+  yellow: '#F5C518',
+  white: '#FFFFFF',
+  offWhite: '#F5F7FA',
+  lightGray: '#E5EAF2',
+  gray: '#8A94A6',
+  darkGray: '#4A5568',
+  black: '#1A202C',
   danger: '#EF4444',
 };
 
@@ -60,19 +59,13 @@ export default function Login() {
       const trimmedEmail = email.trim().toLowerCase();
       const trimmedPassword = password.trim();
 
-      console.log('🔐 Attempting login for:', trimmedEmail);
-
-      // ============ STEP 1: Try Supabase Auth ============
       const { data, error } = await supabase.auth.signInWithPassword({
         email: trimmedEmail,
         password: trimmedPassword,
       });
 
       if (!error && data?.user) {
-        console.log('✅ Auth login successful for:', data.user.email);
-
         await AsyncStorage.setItem('userEmail', trimmedEmail);
-
         const role = data.user.user_metadata?.role || 'student';
         const validRoles: UserRole[] = ['admin', 'registrar', 'teacher', 'student', 'parent'];
         const validRole = validRoles.includes(role as UserRole) ? (role as UserRole) : 'student';
@@ -81,43 +74,27 @@ export default function Login() {
         return;
       }
 
-      // ============ STEP 2: If Auth fails, check custom users table ============
-      console.log('⚠️ Auth failed, checking custom users table...');
-
       const { data: userData, error: userError } = await supabase
-        .from('users')
-        .select('*')
-        .eq('email', trimmedEmail)
-        .single();
+        .from('users').select('*').eq('email', trimmedEmail).single();
 
       if (userError || !userData) {
-        console.log('❌ User not found in custom table either');
-        setErrorMessage('❌ No account found with this email. Please enroll first.');
+        setErrorMessage('No account found with this email. Please enroll first.');
         setLoading(false);
         return;
       }
 
-      // ============ STEP 3: Check password in custom table ============
       if (userData.password !== trimmedPassword) {
-        console.log('❌ Password mismatch for:', trimmedEmail);
-        setErrorMessage('❌ Invalid password. Please try again.');
+        setErrorMessage('Invalid password. Please try again.');
         setLoading(false);
         return;
       }
-
-      // ============ STEP 4: Login successful via custom table ============
-      console.log('✅ Custom login successful for:', trimmedEmail);
 
       await AsyncStorage.setItem('userEmail', trimmedEmail);
-
       const role = userData.role || 'student';
       const validRoles: UserRole[] = ['admin', 'registrar', 'teacher', 'student', 'parent'];
       const validRole = validRoles.includes(role as UserRole) ? (role as UserRole) : 'student';
-
       router.replace(`/(dashboard)/${validRole}` as Href);
-
     } catch (error: any) {
-      console.error('❌ Unexpected error:', error);
       setErrorMessage('An unexpected error occurred. Please try again.');
     } finally {
       setLoading(false);
@@ -125,413 +102,258 @@ export default function Login() {
   };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    <ImageBackground
+      source={MATATAG_BG}
+      style={styles.bgImage}
+      imageStyle={styles.bgImageStyle}
+      resizeMode="cover"
     >
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
+      <View style={styles.bgOverlay} />
+
+      <KeyboardAvoidingView
+        style={styles.container}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
-        <View style={styles.loginCard}>
-          {/* ===== LOGO + SCHOOL NAME ===== */}
-          <View style={styles.logoSection}>
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Header banner (transparent) */}
+          <View style={styles.headerBanner}>
             <View style={styles.schoolLogo}>
               <Image source={SchoolLogo} style={styles.schoolLogoImage} />
             </View>
-            <View style={styles.schoolName}>
-              <Text style={styles.schoolNameTitle}>HES</Text>
-              <Text style={styles.schoolNameSub}>Hiraya Enrollment System</Text>
-            </View>
+            <Text style={styles.schoolNameTitle}>PLSNHS</Text>
+            <Text style={styles.schoolNameSub}>
+              Placido L. Señor NHS Enrollment System
+            </Text>
           </View>
 
-          <Text style={styles.welcomeTitle}>Welcome Back</Text>
-          <Text style={styles.welcomeSub}>Login to your account to continue</Text>
+          {/* Login card */}
+          <View style={styles.loginCard}>
+            <Text style={styles.welcomeTitle}>Welcome Back</Text>
+            <Text style={styles.welcomeSub}>Login to your account to continue</Text>
 
-          {/* Error Message */}
-          {errorMessage ? (
-            <View style={styles.errorContainer}>
-              <Ionicons name="alert-circle" size={18} color={NEU.danger} />
-              <Text style={styles.errorText}>{errorMessage}</Text>
-            </View>
-          ) : null}
-
-          {/* Form */}
-          <View style={styles.form}>
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Email Address</Text>
-              <View style={styles.inputWrapper}>
-                <Ionicons
-                  name="mail-outline"
-                  size={18}
-                  color={NEU.textMuted}
-                  style={styles.inputIconLeft}
-                />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Enter your email address"
-                  placeholderTextColor={NEU.textFaint}
-                  value={email}
-                  onChangeText={(text) => {
-                    setEmail(text);
-                    setErrorMessage('');
-                  }}
-                  autoCapitalize="none"
-                  keyboardType="email-address"
-                  autoCorrect={false}
-                />
+            {errorMessage ? (
+              <View style={styles.errorContainer}>
+                <Ionicons name="alert-circle" size={18} color={THEME.danger} />
+                <Text style={styles.errorText}>{errorMessage}</Text>
               </View>
-            </View>
+            ) : null}
 
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Password</Text>
-              <View style={styles.inputWrapper}>
-                <Ionicons
-                  name="lock-closed-outline"
-                  size={18}
-                  color={NEU.textMuted}
-                  style={styles.inputIconLeft}
-                />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Enter your password"
-                  placeholderTextColor={NEU.textFaint}
-                  value={password}
-                  onChangeText={(text) => {
-                    setPassword(text);
-                    setErrorMessage('');
-                  }}
-                  secureTextEntry={!showPassword}
-                  autoCorrect={false}
-                />
-                <TouchableOpacity
-                  style={styles.togglePassword}
-                  onPress={() => setShowPassword(!showPassword)}
-                >
-                  <Ionicons
-                    name={showPassword ? 'eye-off-outline' : 'eye-outline'}
-                    size={18}
-                    color={NEU.textMuted}
+            <View style={styles.form}>
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>Email Address</Text>
+                <View style={styles.inputWrapper}>
+                  <Ionicons name="mail-outline" size={18} color={THEME.gray} />
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Enter your email address"
+                    placeholderTextColor={THEME.gray}
+                    value={email}
+                    onChangeText={(text) => { setEmail(text); setErrorMessage(''); }}
+                    autoCapitalize="none"
+                    keyboardType="email-address"
+                    autoCorrect={false}
                   />
-                </TouchableOpacity>
+                </View>
               </View>
-            </View>
 
-            <View style={styles.rowBetween}>
-              <View style={styles.rememberMe}>
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>Password</Text>
+                <View style={styles.inputWrapper}>
+                  <Ionicons name="lock-closed-outline" size={18} color={THEME.gray} />
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Enter your password"
+                    placeholderTextColor={THEME.gray}
+                    value={password}
+                    onChangeText={(text) => { setPassword(text); setErrorMessage(''); }}
+                    secureTextEntry={!showPassword}
+                    autoCorrect={false}
+                  />
+                  <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
+                    <Ionicons
+                      name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                      size={18}
+                      color={THEME.gray}
+                    />
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              <View style={styles.rowBetween}>
                 <TouchableOpacity
-                  style={styles.checkbox}
+                  style={styles.rememberMe}
                   onPress={() => setRememberMe(!rememberMe)}
                 >
-                  {rememberMe && (
-                    <Ionicons name="checkmark" size={12} color={NEU.accent} />
-                  )}
+                  <View style={[styles.checkbox, rememberMe && styles.checkboxChecked]}>
+                    {rememberMe && <Ionicons name="checkmark" size={12} color={THEME.white} />}
+                  </View>
+                  <Text style={styles.rememberMeText}>Remember me</Text>
                 </TouchableOpacity>
-                <Text style={styles.rememberMeText}>Remember me</Text>
+
+                <TouchableOpacity onPress={() => router.push('/(auth)/forgot-password')}>
+                  <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
+                </TouchableOpacity>
               </View>
 
               <TouchableOpacity
-                style={styles.forgotPassword}
-                onPress={() => router.push('/(auth)/forgot-password')}
+                style={styles.loginButton}
+                onPress={handleLogin}
+                disabled={loading}
+                activeOpacity={0.85}
               >
-                <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
+                {loading ? (
+                  <ActivityIndicator color={THEME.white} />
+                ) : (
+                  <Text style={styles.loginButtonText}>Login</Text>
+                )}
+              </TouchableOpacity>
+
+              <View style={styles.signupLink}>
+                <Text style={styles.signupText}>Don't have an account? </Text>
+                <TouchableOpacity onPress={() => router.push('/(tabs)/enrollment')}>
+                  <Text style={styles.signupLinkText}>Enroll Now</Text>
+                </TouchableOpacity>
+              </View>
+
+              <TouchableOpacity
+                style={styles.backHome}
+                onPress={() => router.push('/(tabs)/home')}
+              >
+                <Ionicons name="arrow-back" size={14} color={THEME.gray} />
+                <Text style={styles.backHomeText}>Back to Home</Text>
               </TouchableOpacity>
             </View>
-
-            <TouchableOpacity
-              style={styles.loginButton}
-              onPress={handleLogin}
-              disabled={loading}
-              activeOpacity={0.8}
-            >
-              {loading ? (
-                <ActivityIndicator color={NEU.accent} />
-              ) : (
-                <Text style={styles.loginButtonText}>Login</Text>
-              )}
-            </TouchableOpacity>
-
-            <View style={styles.signupLink}>
-              <Text style={styles.signupText}>Don't have an account? </Text>
-              <TouchableOpacity onPress={() => router.push('/(tabs)/enrollment')}>
-                <Text style={styles.signupLinkText}>Enroll Now</Text>
-              </TouchableOpacity>
-            </View>
-
-            <TouchableOpacity
-              style={styles.backHome}
-              onPress={() => router.push('/(tabs)/home')}
-            >
-              <Ionicons name="arrow-back" size={14} color={NEU.textMuted} />
-              <Text style={styles.backHomeText}>Back to Home</Text>
-            </TouchableOpacity>
           </View>
-        </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </ImageBackground>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: NEU.bg,
+  bgImage: { flex: 1, width: '100%', height: '100%' },
+  bgImageStyle: {},
+  bgOverlay: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: 'rgba(30,58,138,0.75)', // Royal blue tint over banner
   },
+
+  container: { flex: 1 },
   scrollContent: {
     flexGrow: 1,
     justifyContent: 'center',
     padding: spacing.lg,
   },
 
-  // ===== Login card (large raised neumorphic panel) =====
-  loginCard: {
-    backgroundColor: NEU.bg,
-    borderRadius: 28,
-    padding: spacing.xl,
-    shadowColor: NEU.darkShadow,
-    shadowOffset: { width: 8, height: 8 },
-    shadowOpacity: 0.6,
-    shadowRadius: 18,
-    elevation: 8,
-    borderTopWidth: 1,
-    borderLeftWidth: 1,
-    borderTopColor: NEU.lightShadow,
-    borderLeftColor: NEU.lightShadow,
-  },
-
-  // ===== Logo Section =====
-  logoSection: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: spacing.lg,
-  },
+  // Header banner (over background)
+  headerBanner: { alignItems: 'center', marginBottom: spacing.xl },
   schoolLogo: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: spacing.md,
+    width: 80, height: 80, borderRadius: 40,
+    backgroundColor: THEME.white,
+    alignItems: 'center', justifyContent: 'center',
+    marginBottom: spacing.md,
+    borderWidth: 3, borderColor: THEME.yellow,
     overflow: 'hidden',
-    backgroundColor: NEU.bg,
-    // inset circle — logo sits carved into the card
-    shadowColor: NEU.darkShadow,
-    shadowOffset: { width: 2, height: 2 },
-    shadowOpacity: 0.5,
-    shadowRadius: 4,
-    elevation: 2,
-    borderTopWidth: 1,
-    borderLeftWidth: 1,
-    borderTopColor: 'rgba(163,177,198,0.4)',
-    borderLeftColor: 'rgba(163,177,198,0.4)',
   },
-  schoolLogoImage: {
-    width: '100%',
-    height: '100%',
-    resizeMode: 'contain',
-  },
-  schoolName: {
-    flex: 1,
-  },
+  schoolLogoImage: { width: '100%', height: '100%', resizeMode: 'contain' },
   schoolNameTitle: {
-    fontSize: typography.sizes.lg,
-    fontWeight: '800',
-    color: NEU.text,
-    letterSpacing: -0.3,
+    fontSize: 28, fontWeight: '800', color: THEME.white, letterSpacing: 1,
+    textShadowColor: 'rgba(0,0,0,0.4)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 6,
   },
   schoolNameSub: {
-    fontSize: typography.sizes.xs,
-    color: NEU.textMuted,
-    marginTop: 2,
+    fontSize: 12, color: THEME.yellow, marginTop: 4,
+    fontWeight: '600', textAlign: 'center',
+    textShadowColor: 'rgba(0,0,0,0.3)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
 
-  // ===== Welcome Text =====
+  // Login card (white, flat)
+  loginCard: {
+    backgroundColor: THEME.white,
+    borderRadius: 20,
+    padding: spacing.xl,
+  },
   welcomeTitle: {
-    fontSize: typography.sizes.xxl,
-    fontWeight: '800',
-    color: NEU.text,
-    marginBottom: spacing.xs,
-    textAlign: 'center',
-    letterSpacing: -0.5,
+    fontSize: typography.sizes.xxl, fontWeight: '800',
+    color: THEME.black, marginBottom: spacing.xs, textAlign: 'center',
   },
   welcomeSub: {
-    fontSize: typography.sizes.sm,
-    color: NEU.textMuted,
-    marginBottom: spacing.lg,
-    textAlign: 'center',
+    fontSize: typography.sizes.sm, color: THEME.gray,
+    marginBottom: spacing.lg, textAlign: 'center',
   },
 
-  // ===== Error =====
   errorContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: 12,
-    padding: spacing.md,
-    marginBottom: spacing.md,
-    gap: spacing.sm,
-    backgroundColor: NEU.bg,
-    // inset pill
-    shadowColor: NEU.darkShadow,
-    shadowOffset: { width: 2, height: 2 },
-    shadowOpacity: 0.5,
-    shadowRadius: 4,
-    elevation: 2,
-    borderTopWidth: 1,
-    borderLeftWidth: 1,
-    borderTopColor: 'rgba(163,177,198,0.4)',
-    borderLeftColor: 'rgba(163,177,198,0.4)',
+    flexDirection: 'row', alignItems: 'center',
+    borderRadius: 10, padding: spacing.md, marginBottom: spacing.md,
+    gap: spacing.sm, backgroundColor: '#FEF2F2',
+    borderWidth: 1, borderColor: '#FECACA',
   },
   errorText: {
-    flex: 1,
-    fontSize: typography.sizes.sm,
-    color: NEU.danger,
-    fontWeight: '600',
+    flex: 1, fontSize: typography.sizes.sm,
+    color: THEME.danger, fontWeight: '600',
   },
 
-  // ===== Form =====
-  form: {
-    gap: spacing.md,
-  },
-  inputGroup: {
-    gap: spacing.xs,
-  },
-  label: {
-    fontSize: typography.sizes.sm,
-    fontWeight: '600',
-    color: NEU.text,
-    paddingLeft: 4,
-  },
+  form: { gap: spacing.md },
+  inputGroup: { gap: spacing.xs },
+  label: { fontSize: typography.sizes.sm, fontWeight: '600', color: THEME.black },
   inputWrapper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: 14,
-    paddingHorizontal: spacing.md,
-    backgroundColor: NEU.bg,
-    // inset field
-    shadowColor: NEU.darkShadow,
-    shadowOffset: { width: 3, height: 3 },
-    shadowOpacity: 0.55,
-    shadowRadius: 6,
-    elevation: 2,
-    borderTopWidth: 1,
-    borderLeftWidth: 1,
-    borderTopColor: 'rgba(163,177,198,0.5)',
-    borderLeftColor: 'rgba(163,177,198,0.5)',
-    borderBottomWidth: 1,
-    borderRightWidth: 1,
-    borderBottomColor: NEU.lightShadow,
-    borderRightColor: NEU.lightShadow,
-  },
-  inputIconLeft: {
-    marginRight: spacing.sm,
+    flexDirection: 'row', alignItems: 'center',
+    borderRadius: 12, paddingHorizontal: spacing.md,
+    backgroundColor: THEME.offWhite,
+    borderWidth: 1, borderColor: THEME.lightGray,
+    gap: spacing.sm,
   },
   input: {
-    flex: 1,
-    paddingVertical: spacing.md,
-    fontSize: typography.sizes.sm,
-    color: NEU.text,
-  },
-  togglePassword: {
-    padding: spacing.xs,
+    flex: 1, paddingVertical: spacing.md,
+    fontSize: typography.sizes.sm, color: THEME.black,
   },
 
-  // ===== Row with Remember Me & Forgot Password =====
   rowBetween: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
   },
-  rememberMe: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
+  rememberMe: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   checkbox: {
-    width: 22,
-    height: 22,
-    borderRadius: 6,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: NEU.bg,
-    // inset checkbox
-    shadowColor: NEU.darkShadow,
-    shadowOffset: { width: 2, height: 2 },
-    shadowOpacity: 0.5,
-    shadowRadius: 3,
-    elevation: 1,
-    borderTopWidth: 1,
-    borderLeftWidth: 1,
-    borderTopColor: 'rgba(163,177,198,0.5)',
-    borderLeftColor: 'rgba(163,177,198,0.5)',
+    width: 20, height: 20, borderRadius: 4,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 2, borderColor: THEME.royalBlue,
+    backgroundColor: THEME.white,
   },
-  rememberMeText: {
-    fontSize: typography.sizes.sm,
-    color: NEU.textMuted,
-  },
-  forgotPassword: {
-    paddingVertical: spacing.xs,
-  },
+  checkboxChecked: { backgroundColor: THEME.royalBlue },
+  rememberMeText: { fontSize: typography.sizes.sm, color: THEME.darkGray },
   forgotPasswordText: {
-    fontSize: typography.sizes.xs,
-    color: NEU.accent,
-    fontWeight: '700',
+    fontSize: typography.sizes.sm, color: THEME.royalBlue, fontWeight: '700',
   },
 
-  // ===== Login Button (raised neumorphic) =====
   loginButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: NEU.bg,
-    paddingVertical: spacing.md,
-    borderRadius: 16,
-    gap: spacing.sm,
-    marginTop: spacing.xs,
-    shadowColor: NEU.darkShadow,
-    shadowOffset: { width: 6, height: 6 },
-    shadowOpacity: 0.6,
-    shadowRadius: 12,
-    elevation: 6,
-    borderTopWidth: 1,
-    borderLeftWidth: 1,
-    borderTopColor: NEU.lightShadow,
-    borderLeftColor: NEU.lightShadow,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: THEME.royalBlue,
+    paddingVertical: spacing.md, borderRadius: 12, marginTop: spacing.xs,
   },
   loginButtonText: {
-    color: NEU.accent,
-    fontSize: typography.sizes.md,
-    fontWeight: '800',
-    letterSpacing: 0.5,
+    color: THEME.white, fontSize: typography.sizes.md,
+    fontWeight: '800', letterSpacing: 0.5,
   },
 
-  // ===== Signup Link =====
   signupLink: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    flexWrap: 'wrap',
-    marginTop: spacing.xs,
+    flexDirection: 'row', justifyContent: 'center',
+    flexWrap: 'wrap', marginTop: spacing.sm,
   },
-  signupText: {
-    fontSize: typography.sizes.sm,
-    color: NEU.textMuted,
-  },
+  signupText: { fontSize: typography.sizes.sm, color: THEME.gray },
   signupLinkText: {
-    fontSize: typography.sizes.sm,
-    color: NEU.accent,
-    fontWeight: '700',
+    fontSize: typography.sizes.sm, color: THEME.royalBlue, fontWeight: '700',
   },
 
-  // ===== Back Home =====
   backHome: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.xs,
-    marginTop: spacing.xs,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: spacing.xs, marginTop: spacing.sm,
   },
   backHomeText: {
-    fontSize: typography.sizes.sm,
-    color: NEU.textMuted,
-    fontWeight: '500',
+    fontSize: typography.sizes.sm, color: THEME.gray, fontWeight: '500',
   },
 });

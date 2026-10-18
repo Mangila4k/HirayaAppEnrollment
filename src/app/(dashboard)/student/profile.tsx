@@ -1,4 +1,3 @@
-import { useTheme } from '@/app/_context/themecontext';
 import NotificationBell from '@/components/NotificationBell';
 import { supabase } from '@/lib/supabase/client';
 import { logLogout, logMyActivity } from '@/services/activityLog';
@@ -19,6 +18,24 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+
+const THEME = {
+  royalBlue: '#1E3A8A',
+  royalBlueDark: '#152C6B',
+  yellow: '#F5C518',
+  yellowLight: '#FFD84D',
+  white: '#FFFFFF',
+  offWhite: '#F0F4FA',
+  offWhiteDark: '#D6E0F0',
+  lightShadow: '#FFFFFF',
+  darkShadow: '#B8C5DB',
+  gray: '#8A94A6',
+  darkGray: '#4A5568',
+  black: '#1A202C',
+  success: '#22C55E',
+  danger: '#EF4444',
+  warning: '#F59E0B',
+};
 
 type StudentProfile = {
   id: string;
@@ -53,20 +70,8 @@ type ParentInfo = {
   contact_number: string;
 };
 
-const NEU = {
-  bg: '#E8EDF2',
-  bgDark: '#D1D9E6',
-  lightShadow: '#FFFFFF',
-  darkShadow: '#A3B1C6',
-  text: '#2E3A4D',
-  textMuted: '#7A8699',
-  textFaint: '#A0ACBE',
-  danger: '#EF4444',
-};
-
 export default function StudentProfile() {
   const router = useRouter();
-  const { primaryColor, theme } = useTheme();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [profile, setProfile] = useState<StudentProfile | null>(null);
@@ -78,81 +83,43 @@ export default function StudentProfile() {
   const [creatingParent, setCreatingParent] = useState(false);
 
   const [editForm, setEditForm] = useState({
-    first_name: '',
-    last_name: '',
-    address: '',
-    contact_number: '',
-    parent_name: '',
-    parent_contact: '',
+    first_name: '', last_name: '', address: '',
+    contact_number: '', parent_name: '', parent_contact: '',
   });
-
   const [passwordForm, setPasswordForm] = useState({
-    currentPassword: '',
-    newPassword: '',
-    confirmPassword: '',
+    currentPassword: '', newPassword: '', confirmPassword: '',
   });
-
   const [parentForm, setParentForm] = useState({
-    first_name: '',
-    last_name: '',
-    email: '',
-    contact_number: '',
-    password: '',
+    first_name: '', last_name: '', email: '', contact_number: '', password: '',
   });
 
-  useEffect(() => {
-    loadProfile();
-  }, []);
+  useEffect(() => { loadProfile(); }, []);
 
   const loadProfile = async () => {
     setLoading(true);
     try {
       const email = await AsyncStorage.getItem('userEmail');
-      if (!email) {
-        setLoading(false);
-        return;
-      }
+      if (!email) { setLoading(false); return; }
 
       const { data: userData, error: userError } = await supabase
-        .from('users')
-        .select('*')
-        .eq('email', email)
-        .single();
-
-      if (userError || !userData) {
-        setLoading(false);
-        return;
-      }
+        .from('users').select('*').eq('email', email).single();
+      if (userError || !userData) { setLoading(false); return; }
 
       let studentData: any = null;
 
       if (userData.student_id) {
         const { data } = await supabase
           .from('students')
-          .select(`
-            id, lrn, last_name, first_name, middle_name, suffix,
-            date_of_birth, age, gender, contact_number, email,
-            address, parent_name, parent_contact, parent_id,
-            grade_level, strand, section_id, documents_status, enrollment_id,
-            sections:section_id (name, room)
-          `)
-          .eq('id', userData.student_id)
-          .maybeSingle();
+          .select(`id, lrn, last_name, first_name, middle_name, suffix, date_of_birth, age, gender, contact_number, email, address, parent_name, parent_contact, parent_id, grade_level, strand, section_id, documents_status, enrollment_id, sections:section_id (name, room)`)
+          .eq('id', userData.student_id).maybeSingle();
         studentData = data;
       }
 
       if (!studentData) {
         const { data } = await supabase
           .from('students')
-          .select(`
-            id, lrn, last_name, first_name, middle_name, suffix,
-            date_of_birth, age, gender, contact_number, email,
-            address, parent_name, parent_contact, parent_id,
-            grade_level, strand, section_id, documents_status, enrollment_id,
-            sections:section_id (name, room)
-          `)
-          .eq('email', email)
-          .maybeSingle();
+          .select(`id, lrn, last_name, first_name, middle_name, suffix, date_of_birth, age, gender, contact_number, email, address, parent_name, parent_contact, parent_id, grade_level, strand, section_id, documents_status, enrollment_id, sections:section_id (name, room)`)
+          .eq('email', email).maybeSingle();
         studentData = data;
       }
 
@@ -196,10 +163,8 @@ export default function StudentProfile() {
 
       if (studentData?.parent_id) {
         const { data: parentData } = await supabase
-          .from('users')
-          .select('id, first_name, last_name, email')
-          .eq('id', studentData.parent_id)
-          .maybeSingle();
+          .from('users').select('id, first_name, last_name, email')
+          .eq('id', studentData.parent_id).maybeSingle();
 
         if (parentData) {
           setParentInfo({
@@ -209,12 +174,8 @@ export default function StudentProfile() {
             email: parentData.email || '',
             contact_number: studentData.parent_contact || 'N/A',
           });
-        } else {
-          setParentInfo(null);
-        }
-      } else {
-        setParentInfo(null);
-      }
+        } else { setParentInfo(null); }
+      } else { setParentInfo(null); }
 
       setEditForm({
         first_name: profileData.first_name,
@@ -226,9 +187,7 @@ export default function StudentProfile() {
       });
     } catch (error) {
       console.error('Error loading profile:', error);
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   };
 
   const handleUpdateProfile = async () => {
@@ -247,7 +206,6 @@ export default function StudentProfile() {
           updated_at: new Date().toISOString(),
         })
         .eq('id', profile?.user_id);
-
       if (userError) throw userError;
 
       if (profile?.id && profile.id !== profile.user_id) {
@@ -263,83 +221,54 @@ export default function StudentProfile() {
             updated_at: new Date().toISOString(),
           })
           .eq('id', profile.id);
-
         if (studentError) throw studentError;
       }
 
-      await logMyActivity(
-        'profile_updated',
-        '✏️ Profile Updated',
-        'Your personal information was updated.',
-        { screen: '/student/profile' }
-      );
-
+      await logMyActivity('profile_updated', '✏️ Profile Updated', 'Your personal information was updated.', { screen: '/student/profile' });
       Alert.alert('Success', 'Profile updated successfully!');
       setEditModalVisible(false);
       await loadProfile();
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Failed to update profile');
-    } finally {
-      setSaving(false);
-    }
+    } finally { setSaving(false); }
   };
 
   const handleCreateParent = async () => {
     if (!parentForm.first_name.trim() || !parentForm.last_name.trim()) {
-      Alert.alert('Error', 'First and last name are required');
-      return;
+      Alert.alert('Error', 'First and last name are required'); return;
     }
-    if (!parentForm.email.trim()) {
-      Alert.alert('Error', 'Email is required');
-      return;
-    }
+    if (!parentForm.email.trim()) { Alert.alert('Error', 'Email is required'); return; }
     if (!parentForm.password || parentForm.password.length < 6) {
-      Alert.alert('Error', 'Password must be at least 6 characters');
-      return;
+      Alert.alert('Error', 'Password must be at least 6 characters'); return;
     }
-    if (!profile?.id) {
-      Alert.alert('Error', 'Student record not found');
-      return;
-    }
+    if (!profile?.id) { Alert.alert('Error', 'Student record not found'); return; }
 
     setCreatingParent(true);
     try {
       const cleanEmail = parentForm.email.trim().toLowerCase();
 
       const { data: existing } = await supabase
-        .from('users')
-        .select('id, role')
-        .eq('email', cleanEmail)
-        .maybeSingle();
+        .from('users').select('id, role').eq('email', cleanEmail).maybeSingle();
 
       let parentUserId: string;
 
       if (existing) {
         if (existing.role !== 'parent') {
-          Alert.alert(
-            'Email Already Used',
-            `This email is already registered as a ${existing.role}.`
-          );
-          setCreatingParent(false);
-          return;
+          Alert.alert('Email Already Used', `This email is already registered as a ${existing.role}.`);
+          setCreatingParent(false); return;
         }
         parentUserId = existing.id;
       } else {
         const { data: newUser, error: createError } = await supabase
           .from('users')
           .insert({
-            email: cleanEmail,
-            password: parentForm.password,
+            email: cleanEmail, password: parentForm.password,
             first_name: parentForm.first_name.trim(),
             last_name: parentForm.last_name.trim(),
             role: 'parent',
           })
-          .select('id')
-          .single();
-
-        if (createError || !newUser) {
-          throw new Error(createError?.message || 'Failed to create parent account');
-        }
+          .select('id').single();
+        if (createError || !newUser) throw new Error(createError?.message || 'Failed to create parent account');
         parentUserId = newUser.id;
       }
 
@@ -351,58 +280,29 @@ export default function StudentProfile() {
           parent_contact: parentForm.contact_number.trim() || null,
         })
         .eq('id', profile.id);
-
       if (linkError) throw linkError;
 
-      await logMyActivity(
-        'parent_linked',
-        '👨‍👩‍👧 Parent Linked',
-        `${parentForm.first_name} ${parentForm.last_name} is now linked to your account.`,
-        { screen: '/student/profile' }
-      );
-
+      await logMyActivity('parent_linked', '👨‍👩‍👧 Parent Linked', `${parentForm.first_name} ${parentForm.last_name} is now linked to your account.`, { screen: '/student/profile' });
       Alert.alert('Success', 'Parent account created and linked!');
       setCreateParentModalVisible(false);
-      setParentForm({
-        first_name: '',
-        last_name: '',
-        email: '',
-        contact_number: '',
-        password: '',
-      });
+      setParentForm({ first_name: '', last_name: '', email: '', contact_number: '', password: '' });
       await loadProfile();
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Failed to create parent');
-    } finally {
-      setCreatingParent(false);
-    }
+    } finally { setCreatingParent(false); }
   };
 
   const handleUnlinkParent = () => {
     Alert.alert('Unlink Parent', 'Remove the link between this student and their parent?', [
       { text: 'Cancel', style: 'cancel' },
       {
-        text: 'Unlink',
-        style: 'destructive',
+        text: 'Unlink', style: 'destructive',
         onPress: async () => {
           if (!profile?.id) return;
-          const { error } = await supabase
-            .from('students')
-            .update({ parent_id: null })
-            .eq('id', profile.id);
-
-          if (error) {
-            Alert.alert('Error', error.message);
-            return;
-          }
-
-          await logMyActivity(
-            'parent_unlinked',
-            '🔗 Parent Unlinked',
-            'The parent account was unlinked from your profile.',
-            { screen: '/student/profile' }
-          );
-
+          const { error } = await supabase.from('students')
+            .update({ parent_id: null }).eq('id', profile.id);
+          if (error) { Alert.alert('Error', error.message); return; }
+          await logMyActivity('parent_unlinked', '🔗 Parent Unlinked', 'The parent account was unlinked from your profile.', { screen: '/student/profile' });
           Alert.alert('Success', 'Parent unlinked.');
           await loadProfile();
         },
@@ -411,75 +311,50 @@ export default function StudentProfile() {
   };
 
   const handleChangePassword = async () => {
-    if (
-      !passwordForm.currentPassword ||
-      !passwordForm.newPassword ||
-      !passwordForm.confirmPassword
-    ) {
-      Alert.alert('Error', 'Please fill in all fields');
-      return;
+    if (!passwordForm.currentPassword || !passwordForm.newPassword || !passwordForm.confirmPassword) {
+      Alert.alert('Error', 'Please fill in all fields'); return;
     }
     if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-      Alert.alert('Error', 'New passwords do not match');
-      return;
+      Alert.alert('Error', 'New passwords do not match'); return;
     }
     if (passwordForm.newPassword.length < 6) {
-      Alert.alert('Error', 'Password must be at least 6 characters');
-      return;
+      Alert.alert('Error', 'Password must be at least 6 characters'); return;
     }
 
     setChangingPassword(true);
     try {
       const { data: userData } = await supabase
-        .from('users')
-        .select('password')
-        .eq('id', profile?.user_id)
-        .single();
+        .from('users').select('password').eq('id', profile?.user_id).single();
 
       if (userData?.password !== passwordForm.currentPassword) {
         Alert.alert('Error', 'Current password is incorrect');
-        setChangingPassword(false);
-        return;
+        setChangingPassword(false); return;
       }
 
       const { error } = await supabase
-        .from('users')
-        .update({ password: passwordForm.newPassword })
-        .eq('id', profile?.user_id);
-
+        .from('users').update({ password: passwordForm.newPassword }).eq('id', profile?.user_id);
       if (error) throw error;
 
-      await logMyActivity(
-        'password_changed',
-        '🔒 Password Changed',
-        'Your account password was changed.',
-        { screen: '/student/profile' }
-      );
-
+      await logMyActivity('password_changed', '🔒 Password Changed', 'Your account password was changed.', { screen: '/student/profile' });
       Alert.alert('Success', 'Password changed successfully!');
       setPasswordModalVisible(false);
       setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Failed to change password');
-    } finally {
-      setChangingPassword(false);
-    }
+    } finally { setChangingPassword(false); }
   };
 
   const handleLogout = async () => {
     Alert.alert('Logout', 'Are you sure you want to logout?', [
       { text: 'Cancel', style: 'cancel' },
       {
-        text: 'Logout',
-        style: 'destructive',
+        text: 'Logout', style: 'destructive',
         onPress: async () => {
           try {
             await logLogout();
             await AsyncStorage.removeItem('userEmail');
             router.replace('/(auth)/login');
-          } catch {
-            Alert.alert('Error', 'Failed to logout.');
-          }
+          } catch { Alert.alert('Error', 'Failed to logout.'); }
         },
       },
     ]);
@@ -488,8 +363,7 @@ export default function StudentProfile() {
   const getInitials = () => {
     if (!profile) return 'S';
     return (
-      `${profile.first_name?.charAt(0) || ''}${profile.last_name?.charAt(0) || ''}`.toUpperCase() ||
-      'S'
+      `${profile.first_name?.charAt(0) || ''}${profile.last_name?.charAt(0) || ''}`.toUpperCase() || 'S'
     );
   };
 
@@ -499,21 +373,16 @@ export default function StudentProfile() {
     const suffix = profile.suffix ? ` ${profile.suffix}` : '';
     return (
       `${profile.first_name}${middle} ${profile.last_name}${suffix}`.trim() ||
-      profile.email?.split('@')[0] ||
-      'Student'
+      profile.email?.split('@')[0] || 'Student'
     );
   };
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'Enrolled':
-        return '#22C55E';
-      case 'Pending':
-        return '#F59E0B';
-      case 'Rejected':
-        return '#EF4444';
-      default:
-        return NEU.textMuted;
+      case 'Enrolled': return THEME.success;
+      case 'Pending': return THEME.warning;
+      case 'Rejected': return THEME.danger;
+      default: return THEME.gray;
     }
   };
 
@@ -522,7 +391,7 @@ export default function StudentProfile() {
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.loadingContainer}>
           <View style={styles.loadingOrb}>
-            <ActivityIndicator size="small" color={primaryColor} />
+            <ActivityIndicator size="small" color={THEME.royalBlue} />
           </View>
         </View>
       </SafeAreaView>
@@ -535,7 +404,7 @@ export default function StudentProfile() {
         <View style={styles.loadingContainer}>
           <Text style={styles.loadingText}>No profile found</Text>
           <TouchableOpacity style={styles.retryButton} onPress={loadProfile}>
-            <Text style={[styles.retryButtonText, { color: primaryColor }]}>Retry</Text>
+            <Text style={styles.retryButtonText}>Retry</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -543,7 +412,7 @@ export default function StudentProfile() {
   }
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.background }]}>
+    <SafeAreaView style={styles.safeArea}>
       <ScrollView
         style={styles.container}
         contentContainerStyle={{ paddingBottom: 100 }}
@@ -551,21 +420,20 @@ export default function StudentProfile() {
       >
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn}>
-            <Ionicons name="arrow-back" size={20} color={NEU.text} />
+            <Ionicons name="arrow-back" size={20} color={THEME.royalBlue} />
           </TouchableOpacity>
           <Text style={styles.title}>My Profile</Text>
           <View style={styles.headerActions}>
-            <NotificationBell iconColor={NEU.text} />
+            <NotificationBell iconColor={THEME.royalBlue} />
             <TouchableOpacity onPress={loadProfile} style={styles.iconBtn}>
-              <Ionicons name="refresh" size={18} color={NEU.text} />
+              <Ionicons name="refresh" size={18} color={THEME.royalBlue} />
             </TouchableOpacity>
           </View>
         </View>
 
-        {/* Profile Card */}
         <View style={styles.profileCard}>
-          <View style={[styles.avatar, { backgroundColor: primaryColor + '15' }]}>
-            <Text style={[styles.avatarText, { color: primaryColor }]}>{getInitials()}</Text>
+          <View style={styles.avatar}>
+            <Text style={styles.avatarText}>{getInitials()}</Text>
           </View>
           <Text style={styles.profileName}>{getFullName()}</Text>
           <Text style={styles.profileEmail}>{profile.email}</Text>
@@ -581,19 +449,18 @@ export default function StudentProfile() {
           </View>
         </View>
 
-        {/* Personal Info */}
         <View style={styles.infoCard}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Personal Information</Text>
             <TouchableOpacity style={styles.editButton} onPress={() => setEditModalVisible(true)}>
-              <Ionicons name="create" size={14} color={primaryColor} />
-              <Text style={[styles.editButtonText, { color: primaryColor }]}>Edit</Text>
+              <Ionicons name="create" size={14} color={THEME.royalBlue} />
+              <Text style={styles.editButtonText}>Edit</Text>
             </TouchableOpacity>
           </View>
 
           <View style={styles.infoItem}>
-            <View style={[styles.infoIconWrap, { backgroundColor: primaryColor + '15' }]}>
-              <Ionicons name="card" size={16} color={primaryColor} />
+            <View style={styles.infoIconWrap}>
+              <Ionicons name="card" size={16} color={THEME.royalBlue} />
             </View>
             <View style={styles.infoContent}>
               <Text style={styles.infoLabel}>LRN</Text>
@@ -602,8 +469,8 @@ export default function StudentProfile() {
           </View>
 
           <View style={styles.infoItem}>
-            <View style={[styles.infoIconWrap, { backgroundColor: primaryColor + '15' }]}>
-              <Ionicons name="school" size={16} color={primaryColor} />
+            <View style={styles.infoIconWrap}>
+              <Ionicons name="school" size={16} color={THEME.royalBlue} />
             </View>
             <View style={styles.infoContent}>
               <Text style={styles.infoLabel}>Grade & Section</Text>
@@ -617,8 +484,8 @@ export default function StudentProfile() {
           </View>
 
           <View style={styles.infoItem}>
-            <View style={[styles.infoIconWrap, { backgroundColor: primaryColor + '15' }]}>
-              <Ionicons name="person" size={16} color={primaryColor} />
+            <View style={styles.infoIconWrap}>
+              <Ionicons name="person" size={16} color={THEME.royalBlue} />
             </View>
             <View style={styles.infoContent}>
               <Text style={styles.infoLabel}>Gender</Text>
@@ -627,17 +494,15 @@ export default function StudentProfile() {
           </View>
 
           <View style={styles.infoItem}>
-            <View style={[styles.infoIconWrap, { backgroundColor: primaryColor + '15' }]}>
-              <Ionicons name="calendar" size={16} color={primaryColor} />
+            <View style={styles.infoIconWrap}>
+              <Ionicons name="calendar" size={16} color={THEME.royalBlue} />
             </View>
             <View style={styles.infoContent}>
               <Text style={styles.infoLabel}>Date of Birth</Text>
               <Text style={styles.infoValue}>
                 {profile.date_of_birth !== 'N/A'
                   ? new Date(profile.date_of_birth).toLocaleDateString('en-US', {
-                      year: 'numeric',
-                      month: 'long',
-                      day: 'numeric',
+                      year: 'numeric', month: 'long', day: 'numeric',
                     })
                   : 'N/A'}
                 {profile.age !== 'N/A' ? ` (${profile.age} years old)` : ''}
@@ -646,8 +511,8 @@ export default function StudentProfile() {
           </View>
 
           <View style={styles.infoItem}>
-            <View style={[styles.infoIconWrap, { backgroundColor: primaryColor + '15' }]}>
-              <Ionicons name="call" size={16} color={primaryColor} />
+            <View style={styles.infoIconWrap}>
+              <Ionicons name="call" size={16} color={THEME.royalBlue} />
             </View>
             <View style={styles.infoContent}>
               <Text style={styles.infoLabel}>Contact Number</Text>
@@ -656,8 +521,8 @@ export default function StudentProfile() {
           </View>
 
           <View style={[styles.infoItem, styles.infoItemLast]}>
-            <View style={[styles.infoIconWrap, { backgroundColor: primaryColor + '15' }]}>
-              <Ionicons name="location" size={16} color={primaryColor} />
+            <View style={styles.infoIconWrap}>
+              <Ionicons name="location" size={16} color={THEME.royalBlue} />
             </View>
             <View style={styles.infoContent}>
               <Text style={styles.infoLabel}>Address</Text>
@@ -666,14 +531,13 @@ export default function StudentProfile() {
           </View>
         </View>
 
-        {/* Parent Info */}
         <View style={styles.infoCard}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Parent Information</Text>
             {parentInfo && (
               <TouchableOpacity style={styles.editButton} onPress={handleUnlinkParent}>
-                <Ionicons name="unlink" size={14} color={NEU.danger} />
-                <Text style={[styles.editButtonText, { color: NEU.danger }]}>Unlink</Text>
+                <Ionicons name="unlink" size={14} color={THEME.danger} />
+                <Text style={[styles.editButtonText, { color: THEME.danger }]}>Unlink</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -681,8 +545,8 @@ export default function StudentProfile() {
           {parentInfo ? (
             <>
               <View style={styles.infoItem}>
-                <View style={[styles.infoIconWrap, { backgroundColor: primaryColor + '15' }]}>
-                  <Ionicons name="people" size={16} color={primaryColor} />
+                <View style={styles.infoIconWrap}>
+                  <Ionicons name="people" size={16} color={THEME.royalBlue} />
                 </View>
                 <View style={styles.infoContent}>
                   <Text style={styles.infoLabel}>Parent/Guardian</Text>
@@ -693,8 +557,8 @@ export default function StudentProfile() {
               </View>
 
               <View style={styles.infoItem}>
-                <View style={[styles.infoIconWrap, { backgroundColor: primaryColor + '15' }]}>
-                  <Ionicons name="mail" size={16} color={primaryColor} />
+                <View style={styles.infoIconWrap}>
+                  <Ionicons name="mail" size={16} color={THEME.royalBlue} />
                 </View>
                 <View style={styles.infoContent}>
                   <Text style={styles.infoLabel}>Parent Email</Text>
@@ -703,8 +567,8 @@ export default function StudentProfile() {
               </View>
 
               <View style={[styles.infoItem, styles.infoItemLast]}>
-                <View style={[styles.infoIconWrap, { backgroundColor: primaryColor + '15' }]}>
-                  <Ionicons name="call" size={16} color={primaryColor} />
+                <View style={styles.infoIconWrap}>
+                  <Ionicons name="call" size={16} color={THEME.royalBlue} />
                 </View>
                 <View style={styles.infoContent}>
                   <Text style={styles.infoLabel}>Contact Number</Text>
@@ -714,8 +578,8 @@ export default function StudentProfile() {
             </>
           ) : (
             <View style={styles.noParentContainer}>
-              <View style={[styles.noParentIcon, { backgroundColor: primaryColor + '15' }]}>
-                <Ionicons name="person-add" size={28} color={primaryColor} />
+              <View style={styles.noParentIcon}>
+                <Ionicons name="person-add" size={28} color={THEME.royalBlue} />
               </View>
               <Text style={styles.noParentText}>No parent linked yet</Text>
               <Text style={styles.noParentSubtext}>
@@ -725,10 +589,8 @@ export default function StudentProfile() {
                 style={styles.createParentButton}
                 onPress={() => setCreateParentModalVisible(true)}
               >
-                <Ionicons name="add-circle" size={18} color={primaryColor} />
-                <Text style={[styles.createParentButtonText, { color: primaryColor }]}>
-                  Create Parent Account
-                </Text>
+                <Ionicons name="add-circle" size={18} color={THEME.royalBlue} />
+                <Text style={styles.createParentButtonText}>Create Parent Account</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -738,14 +600,12 @@ export default function StudentProfile() {
           style={styles.changePasswordButton}
           onPress={() => setPasswordModalVisible(true)}
         >
-          <Ionicons name="key" size={18} color={primaryColor} />
-          <Text style={[styles.changePasswordText, { color: primaryColor }]}>
-            Change Password
-          </Text>
+          <Ionicons name="key" size={18} color={THEME.royalBlue} />
+          <Text style={styles.changePasswordText}>Change Password</Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-          <Ionicons name="log-out" size={18} color={NEU.danger} />
+          <Ionicons name="log-out" size={18} color={THEME.danger} />
           <Text style={styles.logoutText}>Logout</Text>
         </TouchableOpacity>
       </ScrollView>
@@ -757,7 +617,7 @@ export default function StudentProfile() {
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Edit Profile</Text>
               <TouchableOpacity onPress={() => setEditModalVisible(false)} style={styles.closeBtn}>
-                <Ionicons name="close" size={20} color={NEU.text} />
+                <Ionicons name="close" size={20} color={THEME.black} />
               </TouchableOpacity>
             </View>
             <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
@@ -768,7 +628,7 @@ export default function StudentProfile() {
                   value={editForm.first_name}
                   onChangeText={(text) => setEditForm({ ...editForm, first_name: text })}
                   placeholder="Enter first name"
-                  placeholderTextColor={NEU.textFaint}
+                  placeholderTextColor={THEME.gray}
                 />
               </View>
               <View style={styles.inputGroup}>
@@ -778,7 +638,7 @@ export default function StudentProfile() {
                   value={editForm.last_name}
                   onChangeText={(text) => setEditForm({ ...editForm, last_name: text })}
                   placeholder="Enter last name"
-                  placeholderTextColor={NEU.textFaint}
+                  placeholderTextColor={THEME.gray}
                 />
               </View>
               <View style={styles.inputGroup}>
@@ -788,7 +648,7 @@ export default function StudentProfile() {
                   value={editForm.contact_number}
                   onChangeText={(text) => setEditForm({ ...editForm, contact_number: text })}
                   placeholder="Enter contact number"
-                  placeholderTextColor={NEU.textFaint}
+                  placeholderTextColor={THEME.gray}
                   keyboardType="phone-pad"
                 />
               </View>
@@ -799,7 +659,7 @@ export default function StudentProfile() {
                   value={editForm.address}
                   onChangeText={(text) => setEditForm({ ...editForm, address: text })}
                   placeholder="Enter address"
-                  placeholderTextColor={NEU.textFaint}
+                  placeholderTextColor={THEME.gray}
                   multiline
                   numberOfLines={3}
                 />
@@ -811,7 +671,7 @@ export default function StudentProfile() {
                   value={editForm.parent_name}
                   onChangeText={(text) => setEditForm({ ...editForm, parent_name: text })}
                   placeholder="Enter parent name"
-                  placeholderTextColor={NEU.textFaint}
+                  placeholderTextColor={THEME.gray}
                 />
               </View>
               <View style={styles.inputGroup}>
@@ -821,7 +681,7 @@ export default function StudentProfile() {
                   value={editForm.parent_contact}
                   onChangeText={(text) => setEditForm({ ...editForm, parent_contact: text })}
                   placeholder="Enter contact number"
-                  placeholderTextColor={NEU.textFaint}
+                  placeholderTextColor={THEME.gray}
                   keyboardType="phone-pad"
                 />
               </View>
@@ -838,9 +698,9 @@ export default function StudentProfile() {
                   disabled={saving}
                 >
                   {saving ? (
-                    <ActivityIndicator size="small" color={primaryColor} />
+                    <ActivityIndicator size="small" color={THEME.white} />
                   ) : (
-                    <Text style={[styles.saveButtonText, { color: primaryColor }]}>Save</Text>
+                    <Text style={styles.saveButtonText}>Save</Text>
                   )}
                 </TouchableOpacity>
               </View>
@@ -856,7 +716,7 @@ export default function StudentProfile() {
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Create Parent Account</Text>
               <TouchableOpacity onPress={() => setCreateParentModalVisible(false)} style={styles.closeBtn}>
-                <Ionicons name="close" size={20} color={NEU.text} />
+                <Ionicons name="close" size={20} color={THEME.black} />
               </TouchableOpacity>
             </View>
             <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
@@ -871,7 +731,7 @@ export default function StudentProfile() {
                   value={parentForm.first_name}
                   onChangeText={(text) => setParentForm({ ...parentForm, first_name: text })}
                   placeholder="Enter parent first name"
-                  placeholderTextColor={NEU.textFaint}
+                  placeholderTextColor={THEME.gray}
                 />
               </View>
               <View style={styles.inputGroup}>
@@ -881,7 +741,7 @@ export default function StudentProfile() {
                   value={parentForm.last_name}
                   onChangeText={(text) => setParentForm({ ...parentForm, last_name: text })}
                   placeholder="Enter parent last name"
-                  placeholderTextColor={NEU.textFaint}
+                  placeholderTextColor={THEME.gray}
                 />
               </View>
               <View style={styles.inputGroup}>
@@ -891,7 +751,7 @@ export default function StudentProfile() {
                   value={parentForm.email}
                   onChangeText={(text) => setParentForm({ ...parentForm, email: text })}
                   placeholder="parent@email.com"
-                  placeholderTextColor={NEU.textFaint}
+                  placeholderTextColor={THEME.gray}
                   keyboardType="email-address"
                   autoCapitalize="none"
                 />
@@ -903,7 +763,7 @@ export default function StudentProfile() {
                   value={parentForm.contact_number}
                   onChangeText={(text) => setParentForm({ ...parentForm, contact_number: text })}
                   placeholder="Enter contact number"
-                  placeholderTextColor={NEU.textFaint}
+                  placeholderTextColor={THEME.gray}
                   keyboardType="phone-pad"
                 />
               </View>
@@ -914,7 +774,7 @@ export default function StudentProfile() {
                   value={parentForm.password}
                   onChangeText={(text) => setParentForm({ ...parentForm, password: text })}
                   placeholder="Create a password"
-                  placeholderTextColor={NEU.textFaint}
+                  placeholderTextColor={THEME.gray}
                   secureTextEntry
                 />
               </View>
@@ -931,11 +791,9 @@ export default function StudentProfile() {
                   disabled={creatingParent}
                 >
                   {creatingParent ? (
-                    <ActivityIndicator size="small" color={primaryColor} />
+                    <ActivityIndicator size="small" color={THEME.white} />
                   ) : (
-                    <Text style={[styles.saveButtonText, { color: primaryColor }]}>
-                      Create & Link
-                    </Text>
+                    <Text style={styles.saveButtonText}>Create & Link</Text>
                   )}
                 </TouchableOpacity>
               </View>
@@ -951,7 +809,7 @@ export default function StudentProfile() {
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Change Password</Text>
               <TouchableOpacity onPress={() => setPasswordModalVisible(false)} style={styles.closeBtn}>
-                <Ionicons name="close" size={20} color={NEU.text} />
+                <Ionicons name="close" size={20} color={THEME.black} />
               </TouchableOpacity>
             </View>
             <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
@@ -962,7 +820,7 @@ export default function StudentProfile() {
                   value={passwordForm.currentPassword}
                   onChangeText={(text) => setPasswordForm({ ...passwordForm, currentPassword: text })}
                   placeholder="Enter current password"
-                  placeholderTextColor={NEU.textFaint}
+                  placeholderTextColor={THEME.gray}
                   secureTextEntry
                 />
               </View>
@@ -973,7 +831,7 @@ export default function StudentProfile() {
                   value={passwordForm.newPassword}
                   onChangeText={(text) => setPasswordForm({ ...passwordForm, newPassword: text })}
                   placeholder="Enter new password"
-                  placeholderTextColor={NEU.textFaint}
+                  placeholderTextColor={THEME.gray}
                   secureTextEntry
                 />
               </View>
@@ -984,7 +842,7 @@ export default function StudentProfile() {
                   value={passwordForm.confirmPassword}
                   onChangeText={(text) => setPasswordForm({ ...passwordForm, confirmPassword: text })}
                   placeholder="Confirm new password"
-                  placeholderTextColor={NEU.textFaint}
+                  placeholderTextColor={THEME.gray}
                   secureTextEntry
                 />
               </View>
@@ -1001,9 +859,9 @@ export default function StudentProfile() {
                   disabled={changingPassword}
                 >
                   {changingPassword ? (
-                    <ActivityIndicator size="small" color={primaryColor} />
+                    <ActivityIndicator size="small" color={THEME.white} />
                   ) : (
-                    <Text style={[styles.saveButtonText, { color: primaryColor }]}>Update</Text>
+                    <Text style={styles.saveButtonText}>Update</Text>
                   )}
                 </TouchableOpacity>
               </View>
@@ -1016,31 +874,33 @@ export default function StudentProfile() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: NEU.bg },
+  safeArea: { flex: 1, backgroundColor: THEME.offWhite },
   container: { flex: 1, padding: spacing.md },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  loadingText: {
+    marginTop: spacing.md, fontSize: typography.sizes.md,
+    color: THEME.gray, fontWeight: '600',
+  },
   loadingOrb: {
     width: 64, height: 64, borderRadius: 32,
     alignItems: 'center', justifyContent: 'center',
-    backgroundColor: NEU.bg,
-    shadowColor: NEU.darkShadow, shadowOffset: { width: 4, height: 4 },
-    shadowOpacity: 0.8, shadowRadius: 8, elevation: 4,
+    backgroundColor: THEME.offWhite,
+    shadowColor: THEME.darkShadow,
+    shadowOffset: { width: -4, height: -4 },
+    shadowOpacity: 0.6, shadowRadius: 8, elevation: 3,
     borderTopWidth: 1, borderLeftWidth: 1,
-    borderTopColor: NEU.lightShadow, borderLeftColor: NEU.lightShadow,
-  },
-  loadingText: {
-    marginTop: spacing.md, fontSize: typography.sizes.md,
-    color: NEU.textMuted, fontWeight: '600',
+    borderTopColor: THEME.lightShadow, borderLeftColor: THEME.lightShadow,
   },
   retryButton: {
     marginTop: spacing.md, paddingHorizontal: spacing.xl, paddingVertical: spacing.md,
-    borderRadius: 14, backgroundColor: NEU.bg,
-    shadowColor: NEU.darkShadow, shadowOffset: { width: 4, height: 4 },
-    shadowOpacity: 0.6, shadowRadius: 8, elevation: 4,
+    borderRadius: 14, backgroundColor: THEME.offWhite,
+    shadowColor: THEME.darkShadow,
+    shadowOffset: { width: 4, height: 4 },
+    shadowOpacity: 0.5, shadowRadius: 8, elevation: 4,
     borderTopWidth: 1, borderLeftWidth: 1,
-    borderTopColor: NEU.lightShadow, borderLeftColor: NEU.lightShadow,
+    borderTopColor: THEME.lightShadow, borderLeftColor: THEME.lightShadow,
   },
-  retryButtonText: { fontSize: typography.sizes.md, fontWeight: '700' },
+  retryButtonText: { fontSize: typography.sizes.md, fontWeight: '700', color: THEME.royalBlue },
 
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
@@ -1050,33 +910,39 @@ const styles = StyleSheet.create({
   iconBtn: {
     width: 44, height: 44, borderRadius: 22,
     alignItems: 'center', justifyContent: 'center',
-    backgroundColor: NEU.bg,
-    shadowColor: NEU.darkShadow, shadowOffset: { width: 4, height: 4 },
-    shadowOpacity: 0.7, shadowRadius: 8, elevation: 4,
+    backgroundColor: THEME.offWhite,
+    shadowColor: THEME.darkShadow,
+    shadowOffset: { width: 4, height: 4 },
+    shadowOpacity: 0.5, shadowRadius: 8, elevation: 4,
     borderTopWidth: 1, borderLeftWidth: 1,
-    borderTopColor: NEU.lightShadow, borderLeftColor: NEU.lightShadow,
+    borderTopColor: THEME.lightShadow, borderLeftColor: THEME.lightShadow,
   },
-  title: { fontSize: typography.sizes.lg, fontWeight: '700', color: NEU.text },
+  title: { fontSize: typography.sizes.lg, fontWeight: '700', color: THEME.black },
 
   profileCard: {
     borderRadius: 24, padding: spacing.xl,
     alignItems: 'center', marginBottom: spacing.md,
-    backgroundColor: NEU.bg,
-    shadowColor: NEU.darkShadow, shadowOffset: { width: 6, height: 6 },
-    shadowOpacity: 0.6, shadowRadius: 14, elevation: 6,
+    backgroundColor: THEME.offWhite,
+    shadowColor: THEME.darkShadow,
+    shadowOffset: { width: 6, height: 6 },
+    shadowOpacity: 0.5, shadowRadius: 12, elevation: 5,
     borderTopWidth: 1, borderLeftWidth: 1,
-    borderTopColor: NEU.lightShadow, borderLeftColor: NEU.lightShadow,
+    borderTopColor: THEME.lightShadow, borderLeftColor: THEME.lightShadow,
   },
   avatar: {
     width: 84, height: 84, borderRadius: 42,
     alignItems: 'center', justifyContent: 'center',
+    backgroundColor: THEME.royalBlue,
+    shadowColor: THEME.royalBlueDark,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4, shadowRadius: 8, elevation: 4,
   },
-  avatarText: { fontSize: 32, fontWeight: '800' },
+  avatarText: { fontSize: 32, fontWeight: '800', color: THEME.white },
   profileName: {
     fontSize: typography.sizes.xl, fontWeight: '800',
-    color: NEU.text, marginTop: spacing.md,
+    color: THEME.black, marginTop: spacing.md,
   },
-  profileEmail: { fontSize: typography.sizes.sm, color: NEU.textMuted, marginTop: 2 },
+  profileEmail: { fontSize: typography.sizes.sm, color: THEME.gray, marginTop: 2 },
   statusBadge: {
     paddingHorizontal: spacing.md, paddingVertical: spacing.xs,
     borderRadius: 12, marginTop: spacing.sm,
@@ -1086,43 +952,40 @@ const styles = StyleSheet.create({
   infoCard: {
     borderRadius: 20, padding: spacing.lg,
     marginBottom: spacing.md,
-    backgroundColor: NEU.bg,
-    shadowColor: NEU.darkShadow, shadowOffset: { width: 5, height: 5 },
-    shadowOpacity: 0.6, shadowRadius: 12, elevation: 5,
+    backgroundColor: THEME.offWhite,
+    shadowColor: THEME.darkShadow,
+    shadowOffset: { width: 5, height: 5 },
+    shadowOpacity: 0.5, shadowRadius: 10, elevation: 5,
     borderTopWidth: 1, borderLeftWidth: 1,
-    borderTopColor: NEU.lightShadow, borderLeftColor: NEU.lightShadow,
+    borderTopColor: THEME.lightShadow, borderLeftColor: THEME.lightShadow,
   },
   sectionHeader: {
     flexDirection: 'row', justifyContent: 'space-between',
     alignItems: 'center', marginBottom: spacing.md,
   },
-  sectionTitle: { fontSize: typography.sizes.md, fontWeight: '700', color: NEU.text },
+  sectionTitle: { fontSize: typography.sizes.md, fontWeight: '700', color: THEME.black },
   editButton: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: 10,
-    backgroundColor: NEU.bg,
-    shadowColor: NEU.darkShadow, shadowOffset: { width: 2, height: 2 },
-    shadowOpacity: 0.5, shadowRadius: 4, elevation: 2,
-    borderTopWidth: 1, borderLeftWidth: 1,
-    borderTopColor: 'rgba(163,177,198,0.4)',
-    borderLeftColor: 'rgba(163,177,198,0.4)',
+    backgroundColor: THEME.royalBlue + '15',
   },
-  editButtonText: { fontSize: typography.sizes.sm, fontWeight: '700' },
+  editButtonText: { fontSize: typography.sizes.sm, fontWeight: '700', color: THEME.royalBlue },
 
   infoItem: {
     flexDirection: 'row', alignItems: 'center',
     paddingVertical: spacing.sm,
-    borderBottomWidth: 1, borderBottomColor: 'rgba(209,217,230,0.6)',
+    borderBottomWidth: 1, borderBottomColor: THEME.offWhiteDark,
   },
   infoItemLast: { borderBottomWidth: 0 },
   infoIconWrap: {
     width: 36, height: 36, borderRadius: 18,
     alignItems: 'center', justifyContent: 'center',
+    backgroundColor: THEME.royalBlue + '15',
   },
   infoContent: { flex: 1, marginLeft: spacing.md },
-  infoLabel: { fontSize: typography.sizes.xs, color: NEU.textMuted },
+  infoLabel: { fontSize: typography.sizes.xs, color: THEME.gray },
   infoValue: {
-    fontSize: typography.sizes.sm, color: NEU.text,
+    fontSize: typography.sizes.sm, color: THEME.black,
     fontWeight: '600', marginTop: 2,
   },
 
@@ -1134,122 +997,130 @@ const styles = StyleSheet.create({
     width: 64, height: 64, borderRadius: 32,
     alignItems: 'center', justifyContent: 'center',
     marginBottom: spacing.sm,
+    backgroundColor: THEME.royalBlue + '15',
   },
   noParentText: {
-    fontSize: typography.sizes.md, color: NEU.text,
+    fontSize: typography.sizes.md, color: THEME.black,
     fontWeight: '700', marginTop: spacing.sm,
   },
   noParentSubtext: {
-    fontSize: typography.sizes.xs, color: NEU.textMuted,
+    fontSize: typography.sizes.xs, color: THEME.gray,
     textAlign: 'center', marginTop: spacing.xs, marginBottom: spacing.md,
   },
   createParentButton: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     gap: spacing.sm, paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
-    borderRadius: 14, backgroundColor: NEU.bg,
-    shadowColor: NEU.darkShadow, shadowOffset: { width: 4, height: 4 },
-    shadowOpacity: 0.6, shadowRadius: 8, elevation: 4,
+    borderRadius: 14, backgroundColor: THEME.offWhite,
+    shadowColor: THEME.darkShadow,
+    shadowOffset: { width: 4, height: 4 },
+    shadowOpacity: 0.5, shadowRadius: 8, elevation: 4,
     borderTopWidth: 1, borderLeftWidth: 1,
-    borderTopColor: NEU.lightShadow, borderLeftColor: NEU.lightShadow,
+    borderTopColor: THEME.lightShadow, borderLeftColor: THEME.lightShadow,
   },
-  createParentButtonText: { fontSize: typography.sizes.sm, fontWeight: '700' },
+  createParentButtonText: { fontSize: typography.sizes.sm, fontWeight: '700', color: THEME.royalBlue },
 
   changePasswordButton: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     borderRadius: 16, padding: spacing.md, gap: spacing.sm,
-    marginBottom: spacing.sm, backgroundColor: NEU.bg,
-    shadowColor: NEU.darkShadow, shadowOffset: { width: 4, height: 4 },
-    shadowOpacity: 0.6, shadowRadius: 8, elevation: 4,
+    marginBottom: spacing.sm, backgroundColor: THEME.offWhite,
+    shadowColor: THEME.darkShadow,
+    shadowOffset: { width: 4, height: 4 },
+    shadowOpacity: 0.5, shadowRadius: 8, elevation: 4,
     borderTopWidth: 1, borderLeftWidth: 1,
-    borderTopColor: NEU.lightShadow, borderLeftColor: NEU.lightShadow,
+    borderTopColor: THEME.lightShadow, borderLeftColor: THEME.lightShadow,
   },
-  changePasswordText: { fontSize: typography.sizes.md, fontWeight: '700' },
+  changePasswordText: { fontSize: typography.sizes.md, fontWeight: '700', color: THEME.royalBlue },
+
   logoutButton: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     borderRadius: 16, padding: spacing.md, gap: spacing.sm,
-    marginBottom: spacing.lg, backgroundColor: NEU.bg,
-    shadowColor: NEU.darkShadow, shadowOffset: { width: 4, height: 4 },
-    shadowOpacity: 0.6, shadowRadius: 8, elevation: 4,
+    marginBottom: spacing.lg, backgroundColor: THEME.offWhite,
+    shadowColor: THEME.darkShadow,
+    shadowOffset: { width: 4, height: 4 },
+    shadowOpacity: 0.5, shadowRadius: 8, elevation: 4,
     borderTopWidth: 1, borderLeftWidth: 1,
-    borderTopColor: NEU.lightShadow, borderLeftColor: NEU.lightShadow,
+    borderTopColor: THEME.lightShadow, borderLeftColor: THEME.lightShadow,
   },
-  logoutText: { fontSize: typography.sizes.md, color: NEU.danger, fontWeight: '700' },
+  logoutText: { fontSize: typography.sizes.md, color: THEME.danger, fontWeight: '700' },
 
   modalOverlay: {
-    flex: 1, backgroundColor: 'rgba(46,58,77,0.45)',
+    flex: 1, backgroundColor: 'rgba(26,32,44,0.5)',
     justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: NEU.bg,
+    backgroundColor: THEME.offWhite,
     borderTopLeftRadius: 24, borderTopRightRadius: 24,
     padding: spacing.lg, maxHeight: '88%',
-    shadowColor: NEU.darkShadow, shadowOffset: { width: 0, height: -6 },
-    shadowOpacity: 0.3, shadowRadius: 20, elevation: 12,
-    borderTopWidth: 1, borderTopColor: NEU.lightShadow,
+    shadowColor: THEME.darkShadow,
+    shadowOffset: { width: 0, height: -6 },
+    shadowOpacity: 0.4, shadowRadius: 14, elevation: 12,
+    borderTopWidth: 1, borderTopColor: THEME.lightShadow,
   },
   modalHeader: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     marginBottom: spacing.md, paddingBottom: spacing.sm,
-    borderBottomWidth: 1, borderBottomColor: NEU.bgDark,
+    borderBottomWidth: 1, borderBottomColor: THEME.offWhiteDark,
   },
-  modalTitle: { fontSize: typography.sizes.lg, fontWeight: '800', color: NEU.text },
+  modalTitle: { fontSize: typography.sizes.lg, fontWeight: '800', color: THEME.black },
   closeBtn: {
     width: 36, height: 36, borderRadius: 18,
     alignItems: 'center', justifyContent: 'center',
-    backgroundColor: NEU.bg,
-    shadowColor: NEU.darkShadow, shadowOffset: { width: 2, height: 2 },
-    shadowOpacity: 0.5, shadowRadius: 4, elevation: 2,
+    backgroundColor: THEME.offWhite,
+    shadowColor: THEME.darkShadow,
+    shadowOffset: { width: 3, height: 3 },
+    shadowOpacity: 0.4, shadowRadius: 6, elevation: 3,
     borderTopWidth: 1, borderLeftWidth: 1,
-    borderTopColor: 'rgba(163,177,198,0.4)',
-    borderLeftColor: 'rgba(163,177,198,0.4)',
+    borderTopColor: THEME.lightShadow, borderLeftColor: THEME.lightShadow,
   },
   modalHelpText: {
-    fontSize: typography.sizes.xs, color: NEU.textMuted,
+    fontSize: typography.sizes.xs, color: THEME.gray,
     marginBottom: spacing.md, lineHeight: 18,
-    padding: spacing.sm, borderRadius: 12, backgroundColor: NEU.bg,
-    shadowColor: NEU.darkShadow, shadowOffset: { width: 2, height: 2 },
-    shadowOpacity: 0.5, shadowRadius: 4, elevation: 2,
-    borderTopWidth: 1, borderLeftWidth: 1,
-    borderTopColor: 'rgba(163,177,198,0.4)',
-    borderLeftColor: 'rgba(163,177,198,0.4)',
+    padding: spacing.sm, borderRadius: 12,
+    backgroundColor: THEME.royalBlue + '10',
+    borderLeftWidth: 3, borderLeftColor: THEME.royalBlue,
   },
   modalBody: { maxHeight: '90%' },
   inputGroup: { marginBottom: spacing.md },
   inputLabel: {
     fontSize: typography.sizes.sm, fontWeight: '600',
-    color: NEU.text, marginBottom: spacing.xs,
+    color: THEME.black, marginBottom: spacing.xs,
   },
+
   input: {
     borderRadius: 12, padding: spacing.md,
-    fontSize: typography.sizes.md, color: NEU.text,
-    backgroundColor: NEU.bg,
-    shadowColor: NEU.darkShadow, shadowOffset: { width: 2, height: 2 },
+    fontSize: typography.sizes.md, color: THEME.black,
+    backgroundColor: THEME.offWhite,
+    shadowColor: THEME.darkShadow,
+    shadowOffset: { width: -2, height: -2 },
     shadowOpacity: 0.5, shadowRadius: 4, elevation: 2,
     borderTopWidth: 1, borderLeftWidth: 1,
-    borderTopColor: 'rgba(163,177,198,0.4)',
-    borderLeftColor: 'rgba(163,177,198,0.4)',
+    borderTopColor: THEME.lightShadow, borderLeftColor: THEME.lightShadow,
+    borderBottomWidth: 1, borderRightWidth: 1,
+    borderBottomColor: THEME.darkShadow, borderRightColor: THEME.darkShadow,
   },
   textArea: { minHeight: 80, textAlignVertical: 'top' },
+
   modalButtons: {
     flexDirection: 'row', gap: spacing.sm,
     marginTop: spacing.md, marginBottom: spacing.md,
   },
   modalButton: { flex: 1, padding: spacing.md, borderRadius: 14, alignItems: 'center' },
+
   cancelButton: {
-    backgroundColor: NEU.bg,
-    shadowColor: NEU.darkShadow, shadowOffset: { width: 2, height: 2 },
-    shadowOpacity: 0.5, shadowRadius: 4, elevation: 2,
+    backgroundColor: THEME.offWhite,
+    shadowColor: THEME.darkShadow,
+    shadowOffset: { width: 3, height: 3 },
+    shadowOpacity: 0.4, shadowRadius: 6, elevation: 3,
     borderTopWidth: 1, borderLeftWidth: 1,
-    borderTopColor: 'rgba(163,177,198,0.4)',
-    borderLeftColor: 'rgba(163,177,198,0.4)',
+    borderTopColor: THEME.lightShadow, borderLeftColor: THEME.lightShadow,
   },
-  cancelButtonText: { color: NEU.text, fontSize: typography.sizes.md, fontWeight: '600' },
+  cancelButtonText: { color: THEME.black, fontSize: typography.sizes.md, fontWeight: '600' },
+
   saveButton: {
-    backgroundColor: NEU.bg,
-    shadowColor: NEU.darkShadow, shadowOffset: { width: 4, height: 4 },
-    shadowOpacity: 0.6, shadowRadius: 8, elevation: 4,
-    borderTopWidth: 1, borderLeftWidth: 1,
-    borderTopColor: NEU.lightShadow, borderLeftColor: NEU.lightShadow,
+    backgroundColor: THEME.royalBlue,
+    shadowColor: THEME.royalBlueDark,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4, shadowRadius: 8, elevation: 5,
   },
-  saveButtonText: { fontSize: typography.sizes.md, fontWeight: '700' },
+  saveButtonText: { fontSize: typography.sizes.md, fontWeight: '700', color: THEME.white },
 });

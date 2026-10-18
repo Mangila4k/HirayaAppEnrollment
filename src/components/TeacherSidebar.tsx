@@ -1,4 +1,5 @@
-import { ACCENT_PRESETS, useTheme } from '@/app/_context/themecontext';
+import { supabase } from '@/lib/supabase/client';
+import { spacing, typography } from '@/styles';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { usePathname, useRouter } from 'expo-router';
@@ -9,7 +10,6 @@ import {
   Modal,
   ScrollView,
   StyleSheet,
-  Switch,
   Text,
   TouchableOpacity,
   View,
@@ -18,49 +18,69 @@ import {
 const { width } = Dimensions.get('window');
 const SIDEBAR_WIDTH = Math.min(width * 0.78, 320);
 
-const NEU = {
-  bg: '#E8EDF2',
-  bgDark: '#D1D9E6',
-  lightShadow: '#FFFFFF',
-  darkShadow: '#A3B1C6',
-  text: '#2E3A4D',
-  textMuted: '#7A8699',
-  textFaint: '#A0ACBE',
+const THEME = {
+  royalBlue: '#1E3A8A',
+  royalBlueSoft: 'rgba(30,58,138,0.12)',
+  yellow: '#F5C518',
+  white: '#FFFFFF',
+  offWhite: '#F5F7FA',
+  lightGray: '#E5EAF2',
+  gray: '#8A94A6',
+  darkGray: '#4A5568',
+  black: '#1A202C',
   danger: '#EF4444',
 };
 
-const NAV_ITEMS: {
-  key: string;
-  label: string;
-  icon: keyof typeof Ionicons.glyphMap;
-  route: string;
-}[] = [
-  { key: 'index', label: 'Dashboard', icon: 'grid', route: '/(dashboard)/teacher' },
-  { key: 'attendance', label: 'Attendance', icon: 'checkmark-done', route: '/(dashboard)/teacher/attendance' },
-  { key: 'face-attendance', label: 'Face Attendance', icon: 'scan', route: '/(dashboard)/teacher/face-attendance' },
-  { key: 'schedule', label: 'Schedule', icon: 'time', route: '/(dashboard)/teacher/schedule' },
-  { key: 'subjects', label: 'Subjects', icon: 'book', route: '/(dashboard)/teacher/subjects' },
-  { key: 'grades', label: 'Grades', icon: 'star', route: '/(dashboard)/teacher/grades' },
-  { key: 'profile', label: 'Profile', icon: 'person-circle', route: '/(dashboard)/teacher/profile' },
-];
-
-type Props = { visible: boolean; onClose: () => void };
+type Props = {
+  visible: boolean;
+  onClose: () => void;
+};
 
 export default function TeacherSidebar({ visible, onClose }: Props) {
   const router = useRouter();
   const pathname = usePathname();
-  const { isDark, setIsDark, primaryColor, setPrimaryColor, theme } = useTheme();
   const [teacherName, setTeacherName] = useState('Teacher');
   const [teacherInfo, setTeacherInfo] = useState('');
-  const [showSettings, setShowSettings] = useState(false);
 
   useEffect(() => {
-    (async () => {
-      const name = await AsyncStorage.getItem('teacherName');
-      const info = await AsyncStorage.getItem('teacherInfo');
-      if (name) setTeacherName(name);
-      if (info) setTeacherInfo(info);
-    })();
+    if (!visible) return;
+
+    const loadTeacher = async () => {
+      try {
+        const email = await AsyncStorage.getItem('userEmail');
+        if (!email) return;
+
+        const { data: userData } = await supabase
+          .from('users')
+          .select('id, first_name, last_name')
+          .eq('email', email)
+          .maybeSingle();
+
+        if (!userData) return;
+
+        const fullName = `${userData.first_name || ''} ${userData.last_name || ''}`.trim();
+        setTeacherName(fullName || 'Teacher');
+
+        const { data: teacherData } = await supabase
+          .from('teachers')
+          .select('employee_id, specialization')
+          .eq('user_id', userData.id)
+          .maybeSingle();
+
+        if (teacherData?.employee_id) {
+          setTeacherInfo(`Faculty · ${teacherData.employee_id}`);
+        } else if (teacherData?.specialization) {
+          setTeacherInfo(`Specialization: ${teacherData.specialization}`);
+        } else {
+          setTeacherInfo('Faculty Member');
+        }
+
+      } catch (err) {
+        console.error('Error loading teacher in sidebar:', err);
+      }
+    };
+
+    loadTeacher();
   }, [visible]);
 
   const handleNavigate = (route: string) => {
@@ -90,8 +110,7 @@ export default function TeacherSidebar({ visible, onClose }: Props) {
                   'currentUser',
                 ];
                 for (const key of keys) await AsyncStorage.removeItem(key);
-              } catch (e) {
-                console.error('Logout error:', e);
+              } catch {
                 router.replace('/(auth)/login' as any);
               }
             },
@@ -108,199 +127,90 @@ export default function TeacherSidebar({ visible, onClose }: Props) {
     return parts.slice(0, 2).map(p => p[0]).join('').toUpperCase();
   };
 
-  const isActive = (item: (typeof NAV_ITEMS)[number]) => {
-    if (item.key === 'index') {
-      return pathname === '/(dashboard)/teacher' || pathname.endsWith('/teacher');
-    }
-    return pathname.includes(`/teacher/${item.key}`);
+  const isActive = (route: string) => {
+    if (route === '/(dashboard)/teacher') return pathname === '/(dashboard)/teacher' || pathname === '/(dashboard)/teacher/index';
+    return pathname.includes(route);
+  };
+
+  const NavItem = ({ label, icon, route, color = THEME.black }: any) => {
+    const active = isActive(route);
+    return (
+      <TouchableOpacity
+        style={[styles.navItem, active && styles.navItemActive]}
+        onPress={() => handleNavigate(route)}
+        activeOpacity={0.7}
+      >
+        <View style={[styles.navIcon, active && styles.navIconActive]}>
+          <Ionicons
+            name={icon}
+            size={20}
+            color={active ? THEME.white : (color === THEME.danger ? THEME.danger : THEME.royalBlue)}
+          />
+        </View>
+        <Text style={[styles.navLabel, active && styles.navLabelActive, { color: active ? THEME.white : color }]}>
+          {label}
+        </Text>
+        {active && <View style={styles.activeDot} />}
+      </TouchableOpacity>
+    );
   };
 
   return (
-    <>
-      <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-        <View style={styles.overlay}>
-          <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={onClose} />
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.overlay}>
+        <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={onClose} />
 
-          <View style={[styles.panel, { backgroundColor: theme.card }]}>
-            <View style={[styles.header, { borderBottomColor: theme.cardBorder }]}>
-              <View style={[styles.avatar, { backgroundColor: primaryColor }]}>
+        <View style={styles.panel}>
+          
+          <View style={styles.topSpacer} />
+
+          {/* ===== Scrollable Nav Area ===== */}
+          <ScrollView style={styles.nav} showsVerticalScrollIndicator={false}>
+            
+            <Text style={styles.sectionTitle}>MAIN MENU</Text>
+            <NavItem label="Dashboard" icon="grid" route="/(dashboard)/teacher" />
+            <NavItem label="Attendance" icon="checkmark-done" route="/(dashboard)/teacher/attendance" />
+            <NavItem label="Face Attendance" icon="scan" route="/(dashboard)/teacher/face-attendance" />
+            <NavItem label="Class Program" icon="time" route="/(dashboard)/teacher/schedule" />
+
+            <Text style={styles.sectionTitle}>ACADEMICS</Text>
+            <NavItem label="Subjects" icon="book" route="/(dashboard)/teacher/subjects" />
+            <NavItem label="Grades" icon="star" route="/(dashboard)/teacher/grades" />
+
+          </ScrollView>
+
+          {/* ===== Bottom Section (Pinned) ===== */}
+          <View style={styles.bottomSection}>
+            
+            <Text style={styles.sectionTitle}>ACCOUNT</Text>
+
+            <NavItem label="My Profile" icon="person-outline" route="/(dashboard)/teacher/profile" />
+            
+            <TouchableOpacity style={styles.navItem} onPress={handleLogout} activeOpacity={0.7}>
+              <View style={styles.navIcon}>
+                <Ionicons name="log-out-outline" size={20} color={THEME.danger} />
+              </View>
+              <Text style={[styles.navLabel, { color: THEME.danger }]}>Logout</Text>
+            </TouchableOpacity>
+
+            <View style={styles.divider} />
+
+            <View style={styles.profileHeader}>
+              <View style={styles.avatar}>
                 <Text style={styles.avatarText}>{getInitials()}</Text>
               </View>
-              <Text style={[styles.name, { color: theme.text }]} numberOfLines={1}>
-                {teacherName}
-              </Text>
-              {teacherInfo ? (
-                <Text style={[styles.info, { color: theme.textMuted }]} numberOfLines={1}>
-                  {teacherInfo}
-                </Text>
-              ) : null}
+              <View style={styles.headerTextCol}>
+                <Text style={styles.name} numberOfLines={1}>{teacherName}</Text>
+                {teacherInfo ? (
+                  <Text style={styles.info} numberOfLines={1}>{teacherInfo}</Text>
+                ) : null}
+              </View>
             </View>
 
-            <ScrollView style={styles.nav} showsVerticalScrollIndicator={false}>
-              {NAV_ITEMS.map(item => {
-                const active = isActive(item);
-                return (
-                  <TouchableOpacity
-                    key={item.key}
-                    style={[
-                      styles.navItem,
-                      active && { backgroundColor: primaryColor + '15' },
-                    ]}
-                    onPress={() => handleNavigate(item.route)}
-                    activeOpacity={0.7}
-                  >
-                    <View
-                      style={[
-                        styles.navIcon,
-                        {
-                          backgroundColor: active
-                            ? primaryColor + '20'
-                            : theme.background,
-                        },
-                      ]}
-                    >
-                      <Ionicons
-                        name={item.icon}
-                        size={20}
-                        color={active ? primaryColor : theme.textMuted}
-                      />
-                    </View>
-                    <Text
-                      style={[
-                        styles.navLabel,
-                        {
-                          color: active ? primaryColor : theme.text,
-                          fontWeight: active ? '700' : '500',
-                        },
-                      ]}
-                    >
-                      {item.label}
-                    </Text>
-                    {active && (
-                      <View style={[styles.activeDot, { backgroundColor: primaryColor }]} />
-                    )}
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
-
-            <View style={[styles.footer, { borderTopColor: theme.cardBorder }]}>
-              <TouchableOpacity
-                style={styles.footerBtn}
-                onPress={() => {
-                  onClose();
-                  setTimeout(() => setShowSettings(true), 180);
-                }}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="color-palette" size={18} color={primaryColor} />
-                <Text style={[styles.footerText, { color: theme.text }]}>Appearance</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.footerBtn} onPress={handleLogout} activeOpacity={0.7}>
-                <Ionicons name="log-out-outline" size={18} color={NEU.danger} />
-                <Text style={[styles.footerText, { color: NEU.danger }]}>Sign out</Text>
-              </TouchableOpacity>
-            </View>
           </View>
         </View>
-      </Modal>
-
-      <Modal
-        visible={showSettings}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowSettings(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.settingsSheet, { backgroundColor: theme.background }]}>
-            <View style={styles.settingsHeader}>
-              <Text style={[styles.settingsTitle, { color: theme.text }]}>Settings</Text>
-              <TouchableOpacity onPress={() => setShowSettings(false)}>
-                <Ionicons name="close" size={24} color={theme.textMuted} />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView showsVerticalScrollIndicator={false}>
-              <Text style={[styles.sectionLabel, { color: theme.textMuted }]}>APPEARANCE</Text>
-
-              <View
-                style={[
-                  styles.settingRow,
-                  { backgroundColor: theme.card, borderColor: theme.cardBorder },
-                ]}
-              >
-                <View style={[styles.settingIcon, { backgroundColor: primaryColor + '20' }]}>
-                  <Ionicons name="moon" size={20} color={primaryColor} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.settingTitle, { color: theme.text }]}>Dark Mode</Text>
-                  <Text style={[styles.settingSub, { color: theme.textMuted }]}>
-                    {isDark ? 'Currently on' : 'Currently off'}
-                  </Text>
-                </View>
-                <Switch
-                  value={isDark}
-                  onValueChange={setIsDark}
-                  trackColor={{ false: '#d1d5db', true: primaryColor + '80' }}
-                  thumbColor={isDark ? primaryColor : '#f4f3f4'}
-                />
-              </View>
-
-              <View
-                style={[
-                  styles.colorCard,
-                  { backgroundColor: theme.card, borderColor: theme.cardBorder },
-                ]}
-              >
-                <View style={styles.colorHeader}>
-                  <View style={[styles.settingIcon, { backgroundColor: primaryColor + '20' }]}>
-                    <Ionicons name="color-palette" size={20} color={primaryColor} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.settingTitle, { color: theme.text }]}>Theme Color</Text>
-                    <Text style={[styles.settingSub, { color: theme.textMuted }]}>
-                      Pick your accent color
-                    </Text>
-                  </View>
-                </View>
-                <View style={styles.colorGrid}>
-                  {ACCENT_PRESETS.map(preset => {
-                    const selected = primaryColor === preset.value;
-                    return (
-                      <TouchableOpacity
-                        key={preset.value}
-                        style={styles.colorOption}
-                        onPress={() => setPrimaryColor(preset.value)}
-                        activeOpacity={0.7}
-                      >
-                        <View
-                          style={[
-                            styles.colorSwatch,
-                            { backgroundColor: preset.value },
-                            selected && { borderWidth: 3, borderColor: theme.text },
-                          ]}
-                        >
-                          {selected && <Ionicons name="checkmark" size={20} color="#FFFFFF" />}
-                        </View>
-                        <Text
-                          style={[
-                            styles.colorName,
-                            { color: selected ? theme.text : theme.textMuted },
-                          ]}
-                        >
-                          {preset.name}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </View>
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
-    </>
+      </View>
+    </Modal>
   );
 }
 
@@ -309,80 +219,72 @@ const styles = StyleSheet.create({
   backdrop: {
     position: 'absolute',
     top: 0, left: 0, right: 0, bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.45)',
+    backgroundColor: 'rgba(0,0,0,0.5)',
   },
   panel: {
-    width: SIDEBAR_WIDTH, height: '100%',
-    paddingTop: 60, paddingBottom: 20,
-    shadowColor: '#000', shadowOffset: { width: 4, height: 0 },
-    shadowOpacity: 0.15, shadowRadius: 12, elevation: 8,
+    width: SIDEBAR_WIDTH,
+    height: '100%',
+    backgroundColor: THEME.white,
+    paddingBottom: 20,
   },
-  header: {
-    paddingHorizontal: 24, paddingBottom: 24,
-    borderBottomWidth: 1, alignItems: 'flex-start',
+  topSpacer: { paddingTop: 40 },
+  nav: { flex: 1, paddingTop: spacing.md },
+  
+  sectionTitle: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: THEME.gray,
+    letterSpacing: 1,
+    marginTop: 16,
+    marginBottom: 6,
+    paddingHorizontal: spacing.lg,
   },
-  avatar: {
-    width: 60, height: 60, borderRadius: 30,
-    alignItems: 'center', justifyContent: 'center', marginBottom: 12,
-  },
-  avatarText: { color: '#FFFFFF', fontSize: 22, fontWeight: '700' },
-  name: { fontSize: 15, fontWeight: '700' },
-  info: { fontSize: 12, marginTop: 2 },
 
-  nav: { flex: 1, paddingTop: 12 },
   navItem: {
     flexDirection: 'row', alignItems: 'center',
-    paddingVertical: 10, paddingHorizontal: 12,
-    marginHorizontal: 8, borderRadius: 12, marginBottom: 6,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    marginHorizontal: spacing.sm,
+    borderRadius: 10,
+    marginBottom: 4,
   },
+  navItemActive: { backgroundColor: THEME.royalBlue },
   navIcon: {
     width: 38, height: 38, borderRadius: 10,
-    alignItems: 'center', justifyContent: 'center', marginRight: 14,
+    alignItems: 'center', justifyContent: 'center',
+    marginRight: spacing.md,
+    backgroundColor: THEME.royalBlueSoft,
   },
-  navLabel: { flex: 1, fontSize: 14 },
-  activeDot: { width: 8, height: 8, borderRadius: 4 },
+  navIconActive: { backgroundColor: 'rgba(255,255,255,0.2)' },
+  navLabel: { flex: 1, fontSize: typography.sizes.sm, color: THEME.black, fontWeight: '500' },
+  navLabelActive: { color: THEME.white, fontWeight: '700' },
+  activeDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: THEME.yellow },
 
-  footer: {
-    borderTopWidth: 1, paddingTop: 12,
-    paddingHorizontal: 8, gap: 4,
+  bottomSection: {
+    paddingTop: spacing.sm,
+    paddingHorizontal: spacing.sm,
   },
-  footerBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    paddingVertical: 10, paddingHorizontal: 12, borderRadius: 10,
+  divider: {
+    height: 1,
+    backgroundColor: THEME.lightGray,
+    marginVertical: spacing.md,
+    marginHorizontal: spacing.md,
   },
-  footerText: { fontSize: 14, fontWeight: '500' },
 
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  settingsSheet: {
-    borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    padding: 24, maxHeight: '85%',
+  profileHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.sm,
   },
-  settingsHeader: {
-    flexDirection: 'row', justifyContent: 'space-between',
-    alignItems: 'center', marginBottom: 24,
+  headerTextCol: { flex: 1, justifyContent: 'center' },
+  avatar: {
+    width: 50, height: 50, borderRadius: 25,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: THEME.royalBlue,
   },
-  settingsTitle: { fontSize: 18, fontWeight: '700' },
-  sectionLabel: {
-    fontSize: 11, fontWeight: '700', letterSpacing: 1,
-    marginBottom: 10, marginLeft: 4,
-  },
-  settingRow: {
-    flexDirection: 'row', alignItems: 'center',
-    borderRadius: 14, padding: 16, marginBottom: 10, borderWidth: 1,
-  },
-  settingIcon: {
-    width: 40, height: 40, borderRadius: 10,
-    justifyContent: 'center', alignItems: 'center', marginRight: 14,
-  },
-  settingTitle: { fontSize: 14, fontWeight: '600' },
-  settingSub: { fontSize: 11, marginTop: 1 },
-  colorCard: { borderRadius: 14, padding: 16, borderWidth: 1 },
-  colorHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
-  colorGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
-  colorOption: { width: '23%', alignItems: 'center', marginBottom: 16 },
-  colorSwatch: {
-    width: 48, height: 48, borderRadius: 24,
-    justifyContent: 'center', alignItems: 'center', marginBottom: 6,
-  },
-  colorName: { fontSize: 11 },
+  avatarText: { color: THEME.white, fontSize: 18, fontWeight: '700' },
+  name: { fontSize: typography.sizes.md, fontWeight: '700', color: THEME.black },
+  info: { fontSize: typography.sizes.xs, marginTop: 2, color: THEME.gray },
 });

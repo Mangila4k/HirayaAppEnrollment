@@ -7,8 +7,6 @@ import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Animated,
-  Dimensions,
   Modal,
   ScrollView,
   StyleSheet,
@@ -18,9 +16,6 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-
-const { width } = Dimensions.get('window');
-const DRAWER_WIDTH = Math.min(width * 0.78, 320);
 
 type Section = { id: string; name: string; grade_level: string };
 type Subject = { id: string; name: string; code: string; subject_type: string };
@@ -51,56 +46,23 @@ export default function TeacherGrades() {
   const [students, setStudents] = useState<Student[]>([]);
   const [subjectModal, setSubjectModal] = useState(false);
   const [sectionModal, setSectionModal] = useState(false);
-
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const slideAnim = useState(new Animated.Value(-DRAWER_WIDTH))[0];
 
-  const openDrawer = () => {
-    setDrawerOpen(true);
-    Animated.timing(slideAnim, { toValue: 0, duration: 250, useNativeDriver: true }).start();
-  };
-  const closeDrawer = () => {
-    Animated.timing(slideAnim, { toValue: -DRAWER_WIDTH, duration: 220, useNativeDriver: true }).start(
-      () => setDrawerOpen(false)
-    );
-  };
-
-  useEffect(() => {
-    loadTeacherData();
-  }, []);
+  useEffect(() => { loadTeacherData(); }, []);
 
   const loadTeacherData = async () => {
     setLoading(true);
     try {
       const email = await AsyncStorage.getItem('userEmail');
-      if (!email) {
-        setLoading(false);
-        return;
-      }
+      if (!email) { setLoading(false); return; }
       const { data: userData } = await supabase.from('users').select('*').eq('email', email).single();
-      const { data: teacherData } = await supabase
-        .from('teachers')
-        .select('id')
-        .eq('user_id', userData?.id)
-        .maybeSingle();
-      if (!teacherData) {
-        setLoading(false);
-        return;
-      }
-      const { data: scheds } = await supabase
-        .from('schedules')
-        .select('subject_id, section_id')
-        .eq('teacher_id', teacherData.id);
+      const { data: teacherData } = await supabase.from('teachers').select('id').eq('user_id', userData?.id).maybeSingle();
+      if (!teacherData) { setLoading(false); return; }
+      const { data: scheds } = await supabase.from('schedules').select('subject_id, section_id').eq('teacher_id', teacherData.id);
       const subjectIds = [...new Set((scheds || []).map((s: any) => s.subject_id).filter(Boolean))];
       const sectionIds = [...new Set((scheds || []).map((s: any) => s.section_id).filter(Boolean))];
-      const { data: subs } = await supabase
-        .from('subjects')
-        .select('id, name, code, subject_type')
-        .in('id', subjectIds);
-      const { data: secs } = await supabase
-        .from('sections')
-        .select('id, name, grade_level')
-        .in('id', sectionIds);
+      const { data: subs } = await supabase.from('subjects').select('id, name, code, subject_type').in('id', subjectIds);
+      const { data: secs } = await supabase.from('sections').select('id, name, grade_level').in('id', sectionIds);
       setSubjects(subs || []);
       setSections(secs || []);
       if (params.subject && params.section) {
@@ -112,35 +74,22 @@ export default function TeacherGrades() {
           await loadStudents(sec.id, s.id, 1);
         }
       }
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
-    }
+    } catch (e) { console.error(e); } finally { setLoading(false); }
   };
 
   const loadStudents = async (sectionId: string, subjectId: string, quarter: number) => {
     setLoading(true);
     try {
       const { data: studs } = await supabase
-        .from('students')
-        .select('id, lrn, first_name, last_name')
-        .eq('section_id', sectionId)
-        .order('last_name');
-      if (!studs) {
-        setLoading(false);
-        return;
-      }
+        .from('students').select('id, lrn, first_name, last_name')
+        .eq('section_id', sectionId).order('last_name');
+      if (!studs) { setLoading(false); return; }
       const { data: existingGrades } = await supabase
-        .from('grades')
-        .select('id, student_id, grade')
+        .from('grades').select('id, student_id, grade')
         .in('student_id', studs.map(s => s.id))
-        .eq('subject_id', subjectId)
-        .eq('quarter', quarter);
+        .eq('subject_id', subjectId).eq('quarter', quarter);
       const gradeMap: Record<string, any> = {};
-      (existingGrades || []).forEach((g: any) => {
-        gradeMap[g.student_id] = g;
-      });
+      (existingGrades || []).forEach((g: any) => { gradeMap[g.student_id] = g; });
       setStudents(
         studs.map((s: any) => ({
           id: s.id,
@@ -150,11 +99,7 @@ export default function TeacherGrades() {
           existingGradeId: gradeMap[s.id]?.id,
         }))
       );
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
-    }
+    } catch (e) { console.error(e); } finally { setLoading(false); }
   };
 
   const updateGrade = (studentId: string, grade: string) => {
@@ -164,10 +109,7 @@ export default function TeacherGrades() {
   const handleSave = async () => {
     if (!selectedSection || !selectedSubject) return;
     const valid = students.filter(s => s.grade.trim() !== '');
-    if (valid.length === 0) {
-      Alert.alert('Error', 'No grades to save');
-      return;
-    }
+    if (valid.length === 0) { Alert.alert('Error', 'No grades to save'); return; }
     setSaving(true);
     try {
       const rows = valid.map(s => ({
@@ -177,9 +119,7 @@ export default function TeacherGrades() {
         quarter: selectedQuarter,
         grade: parseFloat(s.grade),
       }));
-      await supabase
-        .from('grades')
-        .delete()
+      await supabase.from('grades').delete()
         .eq('subject_id', selectedSubject.id)
         .eq('section_id', selectedSection.id)
         .eq('quarter', selectedQuarter)
@@ -187,11 +127,7 @@ export default function TeacherGrades() {
       const { error } = await supabase.from('grades').insert(rows);
       if (error) throw error;
       Alert.alert('Success', 'Grades saved!');
-    } catch (e: any) {
-      Alert.alert('Error', e.message);
-    } finally {
-      setSaving(false);
-    }
+    } catch (e: any) { Alert.alert('Error', e.message); } finally { setSaving(false); }
   };
 
   const getGradeColor = (g: string) => {
@@ -218,13 +154,9 @@ export default function TeacherGrades() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView
-        style={styles.container}
-        contentContainerStyle={styles.contentContainer}
-        showsVerticalScrollIndicator={false}
-      >
+      <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
-          <TouchableOpacity style={styles.iconBtn} onPress={openDrawer} activeOpacity={0.7}>
+          <TouchableOpacity style={styles.iconBtn} onPress={() => setDrawerOpen(true)} activeOpacity={0.7}>
             <Ionicons name="menu-outline" size={22} color={NEU.text} />
           </TouchableOpacity>
           <View style={styles.headerCenter}>
@@ -234,23 +166,14 @@ export default function TeacherGrades() {
           <View style={{ width: 44 }} />
         </View>
 
-        {/* Selectors */}
         <View style={styles.selectorRow}>
-          <TouchableOpacity
-            style={styles.selectorCard}
-            onPress={() => setSectionModal(true)}
-            activeOpacity={0.7}
-          >
+          <TouchableOpacity style={styles.selectorCard} onPress={() => setSectionModal(true)} activeOpacity={0.7}>
             <Text style={styles.selectorLabel}>Section</Text>
             <Text style={styles.selectorValue} numberOfLines={1}>
               {selectedSection?.name || 'Select'}
             </Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.selectorCard}
-            onPress={() => setSubjectModal(true)}
-            activeOpacity={0.7}
-          >
+          <TouchableOpacity style={styles.selectorCard} onPress={() => setSubjectModal(true)} activeOpacity={0.7}>
             <Text style={styles.selectorLabel}>Subject</Text>
             <Text style={styles.selectorValue} numberOfLines={1}>
               {selectedSubject?.name || 'Select'}
@@ -258,43 +181,29 @@ export default function TeacherGrades() {
           </TouchableOpacity>
         </View>
 
-        {/* Quarter tabs */}
         {selectedSection && selectedSubject && (
           <View style={styles.quarterRow}>
             {[1, 2, 3, 4].map(q => (
               <TouchableOpacity
                 key={q}
-                style={[
-                  styles.quarterBtn,
-                  selectedQuarter === q && styles.quarterBtnActive,
-                ]}
+                style={[styles.quarterBtn, selectedQuarter === q && styles.quarterBtnActive]}
                 onPress={() => {
                   setSelectedQuarter(q);
                   loadStudents(selectedSection.id, selectedSubject.id, q);
                 }}
               >
-                <Text
-                  style={[
-                    styles.quarterText,
-                    selectedQuarter === q && styles.quarterTextActive,
-                  ]}
-                >
-                  Q{q}
-                </Text>
+                <Text style={[styles.quarterText, selectedQuarter === q && styles.quarterTextActive]}>Q{q}</Text>
               </TouchableOpacity>
             ))}
           </View>
         )}
 
-        {/* Student list */}
         {selectedSection && selectedSubject ? (
           <>
             {students.map(s => (
               <View key={s.id} style={styles.studentCard}>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.studentName} numberOfLines={1}>
-                    {s.full_name}
-                  </Text>
+                  <Text style={styles.studentName} numberOfLines={1}>{s.full_name}</Text>
                   <Text style={styles.studentLrn}>LRN: {s.lrn}</Text>
                 </View>
                 <TextInput
@@ -341,13 +250,7 @@ export default function TeacherGrades() {
         )}
       </ScrollView>
 
-      {/* Section Modal */}
-      <Modal
-        animationType="slide"
-        transparent
-        visible={sectionModal}
-        onRequestClose={() => setSectionModal(false)}
-      >
+      <Modal animationType="slide" transparent visible={sectionModal} onRequestClose={() => setSectionModal(false)}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
@@ -379,13 +282,7 @@ export default function TeacherGrades() {
         </View>
       </Modal>
 
-      {/* Subject Modal */}
-      <Modal
-        animationType="slide"
-        transparent
-        visible={subjectModal}
-        onRequestClose={() => setSubjectModal(false)}
-      >
+      <Modal animationType="slide" transparent visible={subjectModal} onRequestClose={() => setSubjectModal(false)}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
@@ -407,9 +304,7 @@ export default function TeacherGrades() {
                 >
                   <View style={{ flex: 1 }}>
                     <Text style={styles.modalItemTitle}>{s.name}</Text>
-                    <Text style={styles.modalItemSub}>
-                      {s.code} • {s.subject_type}
-                    </Text>
+                    <Text style={styles.modalItemSub}>{s.code} • {s.subject_type}</Text>
                   </View>
                   <Ionicons name="chevron-forward" size={16} color={NEU.textFaint} />
                 </TouchableOpacity>
@@ -419,7 +314,7 @@ export default function TeacherGrades() {
         </View>
       </Modal>
 
-      <TeacherSidebar visible={drawerOpen} onClose={closeDrawer} />
+      <TeacherSidebar visible={drawerOpen} onClose={() => setDrawerOpen(false)} />
     </SafeAreaView>
   );
 }
@@ -436,11 +331,7 @@ const styles = StyleSheet.create({
     shadowColor: NEU.lightShadow, shadowOffset: { width: -4, height: -4 },
     shadowOpacity: 1, shadowRadius: 8, elevation: 6,
   },
-
-  header: {
-    flexDirection: 'row', alignItems: 'center',
-    justifyContent: 'space-between', paddingVertical: 20,
-  },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 20 },
   headerCenter: { flex: 1, alignItems: 'center' },
   iconBtn: {
     width: 44, height: 44, borderRadius: 22,
@@ -520,10 +411,7 @@ const styles = StyleSheet.create({
   emptyTitle: { fontSize: 13, color: NEU.textMuted, marginTop: 12, textAlign: 'center' },
 
   modalOverlay: { flex: 1, backgroundColor: 'rgba(46,58,77,0.4)', justifyContent: 'flex-end' },
-  modalContent: {
-    backgroundColor: NEU.bg, borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    padding: 20, maxHeight: '80%',
-  },
+  modalContent: { backgroundColor: NEU.bg, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, maxHeight: '80%' },
   modalHeader: {
     flexDirection: 'row', justifyContent: 'space-between',
     alignItems: 'center', marginBottom: 12, paddingBottom: 12,

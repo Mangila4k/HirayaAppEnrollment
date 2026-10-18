@@ -1,11 +1,13 @@
-import { useTheme } from '@/app/_context/themecontext';
+import StudentSidebar from '@/components/StudentSidebar';
 import { supabase } from '@/lib/supabase/client';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -14,406 +16,478 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-type Grade = {
-  id: string;
-  subject_name: string;
-  subject_code: string;
-  semester: string;
-  quarter: number;
-  grade: number;
-  remarks: string;
+// ===== THEME =====
+const THEME = {
+  royalBlue: '#1E3A8A',
+  royalBlueDark: '#152C6B',
+  yellow: '#F5C518',
+  yellowLight: '#FFD84D',
+  white: '#FFFFFF',
+  offWhite: '#F0F4FA',
+  offWhiteDark: '#D6E0F0',
+  lightShadow: '#FFFFFF',
+  darkShadow: '#B8C5DB',
+  gray: '#8A94A6',
+  darkGray: '#4A5568',
+  black: '#1A202C',
+  success: '#22C55E',
+  danger: '#EF4444',
+  warning: '#F59E0B',
+  info: '#3B82F6',
 };
 
-type GroupedGrades = { [key: string]: Grade[] };
+type Subject = {
+  id: string;
+  name: string;
+  code: string;
+};
 
-type StudentInfo = {
-  full_name: string;
+type GradeData = {
+  [subjectId: string]: {
+    [quarter: number]: number;
+  };
+};
+
+type EnrollmentInfo = {
   grade_level: string;
   strand: string;
-  section: string;
+  school_year: string;
+  status: string;
+  section_name: string;
 };
 
-const NEU = {
-  bg: '#E8EDF2',
-  bgDark: '#D1D9E6',
-  lightShadow: '#FFFFFF',
-  darkShadow: '#A3B1C6',
-  text: '#2E3A4D',
-  textMuted: '#7A8699',
-  textFaint: '#A0ACBE',
-};
+// Default subjects to match the image layout (Junior High)
+const DEFAULT_SUBJECTS = [
+  'Filipino', 'English', 'Mathematics', 'Science', 'Araling Panlipunan (AP)',
+  'Edukasyon sa Pagpapakatao (EsP)', 'Edukasyong Pantahanan at Pangkabuhayan (EPP)',
+  'MAPEH', '*Music', '*Arts', '*Physical Education', '*Health', 'ALIVE'
+];
 
 export default function StudentGrades() {
   const router = useRouter();
-  const { primaryColor, theme } = useTheme();
+
   const [loading, setLoading] = useState(true);
-  const [grades, setGrades] = useState<Grade[]>([]);
-  const [studentInfo, setStudentInfo] = useState<StudentInfo | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+
+  const [student, setStudent] = useState<any>(null);
+  const [enrollment, setEnrollment] = useState<EnrollmentInfo | null>(null);
+  const [subjects, setSubjects] = useState<Subject[]>([]);
+  const [gradesData, setGradesData] = useState<GradeData>({});
 
   useEffect(() => {
-    loadGrades();
+    loadGradesData();
   }, []);
 
-  const loadGrades = async () => {
+  const loadGradesData = async () => {
     setLoading(true);
     try {
       const email = await AsyncStorage.getItem('userEmail');
-      if (!email) {
-        setLoading(false);
-        return;
-      }
+      if (!email) throw new Error('No user email found');
 
-      const { data: userData, error: userError } = await supabase
-        .from('users')
-        .select('*')
-        .eq('email', email)
-        .single();
-
-      if (userError || !userData) {
-        setLoading(false);
-        return;
-      }
-
+      // ===== 1. Fetch Student =====
       let studentData: any = null;
+      const { data: userData } = await supabase
+        .from('users').select('student_id').eq('email', email).maybeSingle();
 
-      if (userData.student_id) {
-        const { data } = await supabase
-          .from('students')
-          .select(`
-            id, lrn, first_name, last_name, middle_name,
-            grade_level, strand,
-            sections:section_id (name)
-          `)
-          .eq('id', userData.student_id)
-          .maybeSingle();
+      if (userData?.student_id) {
+        const { data } = await supabase.from('students').select('*').eq('id', userData.student_id).maybeSingle();
+        studentData = data;
+      }
+      if (!studentData) {
+        const { data } = await supabase.from('students').select('*').eq('email', email).maybeSingle();
         studentData = data;
       }
 
-      if (!studentData) {
-        const { data } = await supabase
-          .from('students')
-          .select(`
-            id, lrn, first_name, last_name, middle_name,
-            grade_level, strand,
-            sections:section_id (name)
-          `)
-          .eq('email', email)
+      if (!studentData) throw new Error('Student record not found');
+      setStudent(studentData);
+
+      // ===== 2. Fetch Enrollment (fallback for school year / status) =====
+      let enrollmentData: any = null;
+      const { data: eRows } = await supabase
+        .from('enrollments').select('*')
+        .or(`email.eq.${email},student_id.eq.${studentData.id}`)
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      if (eRows && eRows.length > 0) enrollmentData = eRows[0];
+
+      // ===== 3. GRADE LEVEL & STRAND come from the students table =====
+      const gradeLevel = studentData.grade_level || enrollmentData?.grade_level || 'Grade 8';
+      const strand     = studentData.strand      || enrollmentData?.strand      || 'N/A';
+
+      // ===== 4. SECTION comes from the sections table =====
+      // Try multiple possible FK column names on the students row.
+      let sectionName = 'N/A';
+      const sectionId =
+        studentData.section_id ||
+        studentData.sectionId  ||
+        studentData.section    ||
+        null;
+
+      if (sectionId) {
+        const { data: sectionRow } = await supabase
+          .from('sections')
+          .select('*')
+          .eq('id', sectionId)
           .maybeSingle();
-        studentData = data;
+
+        if (sectionRow) {
+          sectionName =
+            sectionRow.name ||
+            sectionRow.section_name ||
+            sectionRow.section ||
+            'N/A';
+        }
+      } else if (studentData.section_name) {
+        // If the student row already stores the section name directly
+        sectionName = studentData.section_name;
+      } else if (enrollmentData?.section_name) {
+        sectionName = enrollmentData.section_name;
       }
 
-      if (!studentData) {
-        setLoading(false);
-        return;
-      }
+      const schoolYear = enrollmentData?.school_year || '2025-2026';
+      const status = enrollmentData?.status
+        ? (enrollmentData.status.charAt(0).toUpperCase() + enrollmentData.status.slice(1))
+        : (studentData.documents_status === 'complete' ? 'Enrolled' : 'Pending');
 
-      const sectionRel = Array.isArray(studentData.sections)
-        ? studentData.sections[0]
-        : studentData.sections;
-
-      setStudentInfo({
-        full_name:
-          `${studentData.first_name || ''} ${studentData.last_name || ''}`.trim() || 'Student',
-        grade_level: studentData.grade_level || 'N/A',
-        strand: studentData.strand || 'N/A',
-        section: sectionRel?.name || 'No Section',
+      setEnrollment({
+        grade_level: gradeLevel,
+        strand,
+        school_year: schoolYear,
+        status,
+        section_name: sectionName,
       });
 
-      const { data: gradesData, error: gradesError } = await supabase
-        .from('grades')
-        .select(`
-          id, semester, quarter, grade, remarks,
-          subjects:subject_id (name, code)
-        `)
-        .eq('student_id', studentData.id)
-        .order('quarter', { ascending: true });
+      // ===== 5. Fetch Subjects =====
+      let subjectList: Subject[] = [];
+      const { data: dbSubjects } = await supabase.from('subjects').select('*');
 
-      if (gradesError) {
-        setLoading(false);
-        return;
+      if (dbSubjects && dbSubjects.length > 0) {
+        subjectList = dbSubjects.filter((s: any) => {
+          const gradeMatch = s.grade_level === gradeLevel || s.grade_level?.includes(gradeLevel.replace('Grade ', ''));
+          const strandMatch = !s.strand || s.strand === strand || s.strand === 'General' || strand === 'N/A';
+          return gradeMatch && strandMatch;
+        }).map((s: any) => ({
+          id: s.id,
+          name: s.name || s.subject_name || 'Subject',
+          code: s.code || 'SUB101'
+        }));
       }
 
-      if (gradesData) {
-        const formatted: Grade[] = gradesData.map((g: any) => {
-          const subjRel = Array.isArray(g.subjects) ? g.subjects[0] : g.subjects;
-          return {
-            id: g.id,
-            subject_name: subjRel?.name || 'Unknown Subject',
-            subject_code: subjRel?.code || 'N/A',
-            semester: g.semester || '',
-            quarter: g.quarter || 1,
-            grade: g.grade || 0,
-            remarks: g.remarks || '',
-          };
+      // Fallback if DB is empty
+      if (subjectList.length === 0) {
+        subjectList = DEFAULT_SUBJECTS.map((name, idx) => ({
+          id: `sub_${idx + 1}`,
+          name,
+          code: `SUB${101 + idx}`
+        }));
+      }
+
+      setSubjects(subjectList);
+
+      // ===== 6. Fetch Grades (STRICTLY FROM DATABASE) =====
+      const gradeMap: GradeData = {};
+      const { data: dbGrades } = await supabase
+        .from('grades').select('*').eq('student_id', studentData.id);
+
+      if (dbGrades && dbGrades.length > 0) {
+        dbGrades.forEach((g: any) => {
+          if (!gradeMap[g.subject_id]) gradeMap[g.subject_id] = {};
+          gradeMap[g.subject_id][g.quarter] = parseFloat(g.grade);
         });
-        setGrades(formatted);
       }
-    } catch (error) {
-      console.error('Error loading grades:', error);
+
+      setGradesData(gradeMap);
+    } catch (e: any) {
+      console.error(e);
+      Alert.alert('Error', e?.message || 'Failed to load grades');
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
-  const groupByQuarter = (): GroupedGrades => {
-    const grouped: GroupedGrades = {};
-    grades.forEach((g) => {
-      const key = `Quarter ${g.quarter}`;
-      if (!grouped[key]) grouped[key] = [];
-      grouped[key].push(g);
+  const onRefresh = () => {
+    setRefreshing(true);
+    loadGradesData();
+  };
+
+  // ===== REMARKS: PASSED / FAILED ONLY =====
+  const getRemarks = (grade: number) => {
+    if (grade >= 75) return 'Passed';
+    return 'Failed';
+  };
+
+  // ===== CALCULATIONS =====
+  const generalAverage = useMemo(() => {
+    let total = 0;
+    let count = 0;
+
+    subjects.forEach(sub => {
+      const grades = gradesData[sub.id] || {};
+      const q1 = grades[1] || 0;
+      const q2 = grades[2] || 0;
+      const q3 = grades[3] || 0;
+      const q4 = grades[4] || 0;
+
+      if (q1 > 0 && q2 > 0 && q3 > 0 && q4 > 0) {
+        const final = (q1 + q2 + q3 + q4) / 4;
+        total += final;
+        count++;
+      }
     });
-    return grouped;
-  };
 
-  const getGradeColor = (grade: number) => {
-    if (grade >= 90) return '#22C55E';
-    if (grade >= 85) return '#84CC16';
-    if (grade >= 80) return '#F59E0B';
-    if (grade >= 75) return '#F97316';
-    return '#EF4444';
-  };
-
-  const getGradeRemarks = (grade: number) => {
-    if (grade >= 90) return 'Outstanding';
-    if (grade >= 85) return 'Very Satisfactory';
-    if (grade >= 80) return 'Satisfactory';
-    if (grade >= 75) return 'Fairly Satisfactory';
-    return 'Did Not Meet Expectations';
-  };
-
-  const calculateAverage = () => {
-    if (grades.length === 0) return 0;
-    const sum = grades.reduce((acc, g) => acc + g.grade, 0);
-    return Math.round((sum / grades.length) * 100) / 100;
-  };
+    return count > 0 ? (total / count).toFixed(2) : '—';
+  }, [subjects, gradesData]);
 
   if (loading) {
     return (
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.loadingContainer}>
           <View style={styles.loadingOrb}>
-            <ActivityIndicator size="small" color={primaryColor} />
+            <ActivityIndicator size="small" color={THEME.royalBlue} />
           </View>
         </View>
       </SafeAreaView>
     );
   }
 
-  const grouped = groupByQuarter();
-  const quarters = Object.keys(grouped).sort((a, b) => {
-    return parseInt(a.replace('Quarter ', '')) - parseInt(b.replace('Quarter ', ''));
-  });
-  const average = calculateAverage();
-
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.background }]}>
+    <SafeAreaView style={styles.safeArea}>
       <ScrollView
         style={styles.container}
         contentContainerStyle={{ paddingBottom: 100 }}
         showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={THEME.royalBlue} />}
       >
+        {/* ===== HEADER ===== */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn}>
-            <Ionicons name="arrow-back" size={20} color={NEU.text} />
+          <TouchableOpacity onPress={() => setDrawerOpen(true)} style={styles.iconBtn}>
+            <Ionicons name="menu-outline" size={22} color={THEME.royalBlue} />
           </TouchableOpacity>
           <Text style={styles.title}>My Grades</Text>
-          <TouchableOpacity onPress={loadGrades} style={styles.iconBtn}>
-            <Ionicons name="refresh" size={18} color={NEU.text} />
+          <TouchableOpacity onPress={loadGradesData} style={styles.iconBtn}>
+            <Ionicons name="refresh" size={18} color={THEME.royalBlue} />
           </TouchableOpacity>
         </View>
 
-        {studentInfo && (
+        {/* ===== ENROLLMENT INFO ===== */}
+        {enrollment && (
           <View style={styles.infoCard}>
-            <Text style={styles.infoName}>{studentInfo.full_name}</Text>
-            <Text style={styles.infoDetails}>
-              {studentInfo.grade_level}
-              {studentInfo.strand !== 'N/A' ? ` • ${studentInfo.strand}` : ''}
-              {' • '}
-              {studentInfo.section}
-            </Text>
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>Student:</Text>
+              <Text style={styles.infoVal}>{student?.first_name} {student?.last_name}</Text>
+            </View>
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>Grade & Section:</Text>
+              <Text style={styles.infoVal}>
+                {enrollment.grade_level} ({enrollment.section_name})
+              </Text>
+            </View>
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>Strand:</Text>
+              <Text style={styles.infoVal}>{enrollment.strand}</Text>
+            </View>
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>School Year:</Text>
+              <Text style={styles.infoVal}>{enrollment.school_year}</Text>
+            </View>
           </View>
         )}
 
-        <View style={styles.averageCard}>
-          <View
-            style={[
-              styles.averageIcon,
-              { backgroundColor: getGradeColor(average) + '20' },
-            ]}
-          >
-            <Ionicons name="star" size={28} color={getGradeColor(average)} />
-          </View>
-          <View style={styles.averageInfo}>
-            <Text style={styles.averageLabel}>General Average</Text>
-            <Text style={[styles.averageValue, { color: getGradeColor(average) }]}>
-              {average || 'N/A'}
-            </Text>
-            {average > 0 && <Text style={styles.averageRemarks}>{getGradeRemarks(average)}</Text>}
+        {/* ===== REPORT CARD CONTAINER ===== */}
+        <View style={styles.reportCard}>
+          <Text style={styles.reportTitle}>LEARNING PROGRESS AND ACHIEVEMENT</Text>
+
+          <View style={styles.table}>
+            {/* Table Header */}
+            <View style={styles.tableHeader}>
+              <View style={[styles.cell, styles.cellHeader, { flex: 2.2 }]}>
+                <Text style={styles.headerText}>Learning Areas</Text>
+              </View>
+              <View style={[styles.cell, styles.cellHeader, { flex: 1.8 }]}>
+                <Text style={styles.headerText}>QUARTER</Text>
+                <View style={styles.quarterHeaderRow}>
+                  <View style={[styles.quarterHeadCell, { borderLeftWidth: 0 }]}><Text style={styles.quarterHeadText}>1</Text></View>
+                  <View style={styles.quarterHeadCell}><Text style={styles.quarterHeadText}>2</Text></View>
+                  <View style={styles.quarterHeadCell}><Text style={styles.quarterHeadText}>3</Text></View>
+                  <View style={styles.quarterHeadCell}><Text style={styles.quarterHeadText}>4</Text></View>
+                </View>
+              </View>
+              <View style={[styles.cell, styles.cellHeader, { flex: 1 }]}>
+                <Text style={styles.headerText}>Final{'\n'}Grade</Text>
+              </View>
+              <View style={[styles.cell, styles.cellHeader, { flex: 1.2, borderRightWidth: 0 }]}>
+                <Text style={styles.headerText}>Remarks</Text>
+              </View>
+            </View>
+
+            {/* Table Body */}
+            {subjects.map((sub) => {
+              const grades = gradesData[sub.id] || {};
+              const q1 = grades[1] || 0;
+              const q2 = grades[2] || 0;
+              const q3 = grades[3] || 0;
+              const q4 = grades[4] || 0;
+
+              const hasAllQuarters = q1 > 0 && q2 > 0 && q3 > 0 && q4 > 0;
+              const final = hasAllQuarters ? ((q1 + q2 + q3 + q4) / 4).toFixed(1) : '—';
+              const remark = hasAllQuarters ? getRemarks(Number(final)) : '—';
+
+              return (
+                <View key={sub.id} style={styles.tableRow}>
+                  <View style={[styles.cell, { flex: 2.2, alignItems: 'flex-start', paddingLeft: 6 }]}>
+                    <Text style={styles.subjectText} numberOfLines={2}>{sub.name}</Text>
+                  </View>
+
+                  <View style={[styles.cell, { flex: 1.8, flexDirection: 'row', padding: 0 }]}>
+                    <View style={[styles.qCell, { borderLeftWidth: 0 }]}><Text style={styles.qText}>{q1 || '-'}</Text></View>
+                    <View style={styles.qCell}><Text style={styles.qText}>{q2 || '-'}</Text></View>
+                    <View style={styles.qCell}><Text style={styles.qText}>{q3 || '-'}</Text></View>
+                    <View style={styles.qCell}><Text style={styles.qText}>{q4 || '-'}</Text></View>
+                  </View>
+
+                  <View style={[styles.cell, { flex: 1 }]}>
+                    <Text style={styles.finalText}>{final}</Text>
+                  </View>
+
+                  <View style={[styles.cell, { flex: 1.2, padding: 4, borderRightWidth: 0 }]}>
+                    <Text style={styles.remarkText} numberOfLines={2}>
+                      {remark}
+                    </Text>
+                  </View>
+                </View>
+              );
+            })}
+
+            {/* General Average Row */}
+            <View style={[styles.tableRow, styles.tableRowFooter, { borderBottomWidth: 0 }]}>
+              <View style={[styles.cell, { flex: 4, alignItems: 'flex-end', paddingRight: 10 }]}>
+                <Text style={styles.generalAvgLabel}>General Average</Text>
+              </View>
+              <View style={[styles.cell, { flex: 1 }]}>
+                <Text style={styles.generalAvgValue}>{generalAverage}</Text>
+              </View>
+              <View style={[styles.cell, { flex: 1.2, borderRightWidth: 0 }]}>
+                <Text style={styles.generalAvgRemarks}>
+                  {generalAverage !== '—' ? getRemarks(Number(generalAverage)) : '—'}
+                </Text>
+              </View>
+            </View>
           </View>
         </View>
 
-        {quarters.length > 0 ? (
-          quarters.map((quarter) => (
-            <View key={quarter} style={styles.quarterSection}>
-              <View style={styles.quarterHeader}>
-                <Ionicons name="book" size={16} color={primaryColor} />
-                <Text style={styles.quarterTitle}>{quarter}</Text>
-                <View style={styles.quarterBadge}>
-                  <Text style={[styles.quarterBadgeText, { color: primaryColor }]}>
-                    {grouped[quarter].length} subject{grouped[quarter].length !== 1 ? 's' : ''}
-                  </Text>
-                </View>
-              </View>
-              {grouped[quarter]
-                .sort((a, b) => a.subject_name.localeCompare(b.subject_name))
-                .map((grade) => (
-                  <View key={grade.id} style={styles.gradeItem}>
-                    <View style={styles.gradeInfo}>
-                      <Text style={styles.gradeSubject}>{grade.subject_name}</Text>
-                      <Text style={styles.gradeCode}>
-                        {grade.subject_code}
-                        {grade.semester ? ` • ${grade.semester}` : ''}
-                      </Text>
-                      {grade.remarks ? (
-                        <Text style={styles.gradeRemarks}>{grade.remarks}</Text>
-                      ) : null}
-                    </View>
-                    <View
-                      style={[
-                        styles.gradeBadge,
-                        { backgroundColor: getGradeColor(grade.grade) + '20' },
-                      ]}
-                    >
-                      <Text
-                        style={[styles.gradeValue, { color: getGradeColor(grade.grade) }]}
-                      >
-                        {grade.grade}
-                      </Text>
-                    </View>
-                  </View>
-                ))}
-            </View>
-          ))
-        ) : (
-          <View style={styles.emptyContainer}>
-            <Ionicons name="star-outline" size={44} color={NEU.textFaint} />
-            <Text style={styles.emptyText}>No grades available yet</Text>
-            <Text style={styles.emptySubtext}>
-              Your grades will appear here once your teachers submit them.
-            </Text>
-          </View>
-        )}
       </ScrollView>
+
+      <StudentSidebar visible={drawerOpen} onClose={() => setDrawerOpen(false)} />
     </SafeAreaView>
   );
 }
 
+// ==================================================
+// STYLES
+// ==================================================
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: NEU.bg },
+  safeArea: { flex: 1, backgroundColor: THEME.offWhite },
   container: { flex: 1, padding: 16 },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   loadingOrb: {
     width: 64, height: 64, borderRadius: 32,
     alignItems: 'center', justifyContent: 'center',
-    backgroundColor: NEU.bg,
-    shadowColor: NEU.darkShadow, shadowOffset: { width: 4, height: 4 },
-    shadowOpacity: 0.8, shadowRadius: 8, elevation: 4,
+    backgroundColor: THEME.offWhite,
+    shadowColor: THEME.darkShadow, shadowOffset: { width: -4, height: -4 },
+    shadowOpacity: 0.6, shadowRadius: 8, elevation: 3,
     borderTopWidth: 1, borderLeftWidth: 1,
-    borderTopColor: NEU.lightShadow, borderLeftColor: NEU.lightShadow,
+    borderTopColor: THEME.lightShadow, borderLeftColor: THEME.lightShadow,
   },
+
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    marginBottom: 16, paddingTop: 16,
+    marginBottom: 16, paddingTop: 12,
   },
   iconBtn: {
     width: 44, height: 44, borderRadius: 22,
     alignItems: 'center', justifyContent: 'center',
-    backgroundColor: NEU.bg,
-    shadowColor: NEU.darkShadow, shadowOffset: { width: 4, height: 4 },
-    shadowOpacity: 0.7, shadowRadius: 8, elevation: 4,
-    borderTopWidth: 1, borderLeftWidth: 1,
-    borderTopColor: NEU.lightShadow, borderLeftColor: NEU.lightShadow,
+    backgroundColor: THEME.white,
+    borderWidth: 1, borderColor: THEME.offWhiteDark,
+    shadowColor: THEME.darkShadow, shadowOffset: { width: 4, height: 4 },
+    shadowOpacity: 0.3, shadowRadius: 6, elevation: 3,
   },
-  title: { fontSize: 18, fontWeight: '700', color: NEU.text },
+  title: { fontSize: 18, fontWeight: '700', color: THEME.black },
 
+  // Info Card
   infoCard: {
-    backgroundColor: NEU.bg, borderRadius: 20, padding: 16,
-    marginBottom: 16,
-    shadowColor: NEU.darkShadow, shadowOffset: { width: 5, height: 5 },
-    shadowOpacity: 0.6, shadowRadius: 12, elevation: 5,
-    borderTopWidth: 1, borderLeftWidth: 1,
-    borderTopColor: NEU.lightShadow, borderLeftColor: NEU.lightShadow,
+    backgroundColor: THEME.white, borderRadius: 16, padding: 16, marginBottom: 16,
+    borderWidth: 1, borderColor: THEME.offWhiteDark,
+    shadowColor: THEME.darkShadow, shadowOffset: { width: 4, height: 4 },
+    shadowOpacity: 0.3, shadowRadius: 8, elevation: 3,
   },
-  infoName: { fontSize: 15, fontWeight: '700', color: NEU.text },
-  infoDetails: { fontSize: 13, color: NEU.textMuted, marginTop: 2 },
+  infoRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
+  infoLabel: { fontSize: 12, color: THEME.gray, fontWeight: '600' },
+  infoVal: { fontSize: 13, color: THEME.black, fontWeight: '700' },
 
-  averageCard: {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: NEU.bg, borderRadius: 20, padding: 20,
-    marginBottom: 16,
-    shadowColor: NEU.darkShadow, shadowOffset: { width: 6, height: 6 },
-    shadowOpacity: 0.6, shadowRadius: 14, elevation: 6,
-    borderTopWidth: 1, borderLeftWidth: 1,
-    borderTopColor: NEU.lightShadow, borderLeftColor: NEU.lightShadow,
+  // Report Card Table
+  reportCard: {
+    backgroundColor: THEME.white,
+    borderRadius: 12,
+    borderWidth: 2, borderColor: '#000',
+    overflow: 'hidden',
+    width: '100%',
   },
-  averageIcon: {
-    width: 60, height: 60, borderRadius: 30,
-    alignItems: 'center', justifyContent: 'center', marginRight: 16,
+  reportTitle: {
+    fontSize: 13, fontWeight: '800', color: '#000',
+    textAlign: 'center', paddingVertical: 10, paddingHorizontal: 6,
+    backgroundColor: '#F8F9FA', borderBottomWidth: 2, borderBottomColor: '#000',
   },
-  averageInfo: { flex: 1 },
-  averageLabel: { fontSize: 13, color: NEU.textMuted },
-  averageValue: { fontSize: 40, fontWeight: '800', marginTop: 4 },
-  averageRemarks: { fontSize: 11, color: NEU.textMuted, marginTop: 2 },
+  table: { width: '100%' },
 
-  quarterSection: { marginBottom: 16 },
-  quarterHeader: {
-    flexDirection: 'row', alignItems: 'center',
-    marginBottom: 10, gap: 8,
+  tableHeader: {
+    flexDirection: 'row',
+    backgroundColor: '#E5E7EB',
+    borderBottomWidth: 2, borderBottomColor: '#000',
   },
-  quarterTitle: { fontSize: 15, fontWeight: '700', color: NEU.text, flex: 1 },
-  quarterBadge: {
-    backgroundColor: NEU.bg,
-    paddingHorizontal: 10, paddingVertical: 2, borderRadius: 12,
-    shadowColor: NEU.darkShadow, shadowOffset: { width: 2, height: 2 },
-    shadowOpacity: 0.4, shadowRadius: 3, elevation: 1,
-    borderTopWidth: 1, borderLeftWidth: 1,
-    borderTopColor: NEU.lightShadow, borderLeftColor: NEU.lightShadow,
-  },
-  quarterBadgeText: { fontSize: 11, fontWeight: '700' },
-
-  gradeItem: {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: NEU.bg, borderRadius: 16, padding: 16,
-    marginBottom: 10,
-    shadowColor: NEU.darkShadow, shadowOffset: { width: 4, height: 4 },
-    shadowOpacity: 0.5, shadowRadius: 8, elevation: 4,
-    borderTopWidth: 1, borderLeftWidth: 1,
-    borderTopColor: NEU.lightShadow, borderLeftColor: NEU.lightShadow,
-  },
-  gradeInfo: { flex: 1 },
-  gradeSubject: { fontSize: 14, fontWeight: '600', color: NEU.text },
-  gradeCode: { fontSize: 11, color: NEU.textMuted, marginTop: 2 },
-  gradeRemarks: {
-    fontSize: 11, color: NEU.textFaint, marginTop: 2, fontStyle: 'italic',
-  },
-  gradeBadge: {
-    width: 50, height: 50, borderRadius: 25,
+  cellHeader: {
+    paddingVertical: 6, paddingHorizontal: 2,
     alignItems: 'center', justifyContent: 'center',
+    borderRightWidth: 1, borderRightColor: '#000',
   },
-  gradeValue: { fontSize: 18, fontWeight: '800' },
+  headerText: { fontSize: 10, fontWeight: '800', color: '#000', textAlign: 'center' },
 
-  emptyContainer: {
-    alignItems: 'center', padding: 40,
-    backgroundColor: NEU.bg, borderRadius: 20,
-    shadowColor: NEU.darkShadow, shadowOffset: { width: 6, height: 6 },
-    shadowOpacity: 0.6, shadowRadius: 12, elevation: 5,
-    borderTopWidth: 1, borderLeftWidth: 1,
-    borderTopColor: NEU.lightShadow, borderLeftColor: NEU.lightShadow,
+  quarterHeaderRow: {
+    flexDirection: 'row', width: '100%', marginTop: 4,
   },
-  emptyText: {
-    fontSize: 15, color: NEU.textMuted, marginTop: 16, fontWeight: '600',
+  quarterHeadCell: {
+    flex: 1, alignItems: 'center', justifyContent: 'center',
+    borderLeftWidth: 1, borderLeftColor: '#000',
   },
-  emptySubtext: {
-    fontSize: 13, color: NEU.textFaint, textAlign: 'center', marginTop: 4,
+  quarterHeadText: { fontSize: 9, fontWeight: '800', color: '#000' },
+
+  tableRow: {
+    flexDirection: 'row',
+    borderBottomWidth: 1, borderBottomColor: '#000',
   },
+  cell: {
+    paddingVertical: 6, paddingHorizontal: 2,
+    alignItems: 'center', justifyContent: 'center',
+    borderRightWidth: 1, borderRightColor: '#000',
+  },
+  subjectText: { fontSize: 10, fontWeight: '600', color: '#000' },
+
+  qCell: {
+    flex: 1, alignItems: 'center', justifyContent: 'center',
+    borderLeftWidth: 1, borderLeftColor: '#000',
+    paddingVertical: 6,
+  },
+  qText: { fontSize: 10, fontWeight: '600', color: '#000' },
+
+  finalText: { fontSize: 11, fontWeight: '800', color: '#000' },
+  remarkText: { fontSize: 9, fontWeight: '600', textAlign: 'center', lineHeight: 12, color: '#000' },
+
+  tableRowFooter: {
+    backgroundColor: '#F8F9FA',
+  },
+  generalAvgLabel: { fontSize: 11, fontWeight: '800', color: '#000' },
+  generalAvgValue: { fontSize: 13, fontWeight: '800', color: '#000' },
+  generalAvgRemarks: { fontSize: 9, fontWeight: '700', color: '#000', textAlign: 'center' },
 });

@@ -1,11 +1,13 @@
-import { useTheme } from '@/app/_context/themecontext';
+import StudentSidebar from '@/components/StudentSidebar';
 import { supabase } from '@/lib/supabase/client';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
+  Linking,
   ScrollView,
   StyleSheet,
   Text,
@@ -14,45 +16,59 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-type Schedule = {
+const THEME = {
+  royalBlue: '#1E3A8A',
+  royalBlueDark: '#152C6B',
+  yellow: '#F5C518',
+  yellowLight: '#FFD84D',
+  white: '#FFFFFF',
+  offWhite: '#F0F4FA',
+  offWhiteDark: '#D6E0F0',
+  lightShadow: '#FFFFFF',
+  darkShadow: '#B8C5DB',
+  gray: '#8A94A6',
+  darkGray: '#4A5568',
+  black: '#1A202C',
+  success: '#22C55E',
+  warning: '#F59E0B',
+  info: '#3B82F6',
+  danger: '#EF4444',
+};
+
+type ScheduleItem = {
   id: string;
   day: string;
-  time_start: string;
-  time_end: string;
-  subject_name: string;
-  teacher_name: string;
+  subject: string;
+  teacher: string;
   room: string;
+  start_time: string;
+  end_time: string;
 };
 
-type Subject = {
-  id: string;
-  name: string;
-  code: string;
-  grade_level: string;
-  strand: string;
-  semester: string;
-  quarter: string;
-  subject_type: string;
-};
-
-const NEU = {
-  bg: '#E8EDF2',
-  bgDark: '#D1D9E6',
-  lightShadow: '#FFFFFF',
-  darkShadow: '#A3B1C6',
-  text: '#2E3A4D',
-  textMuted: '#7A8699',
-  textFaint: '#A0ACBE',
-};
+const daysOrder = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 export default function StudentSchedule() {
   const router = useRouter();
-  const { primaryColor, theme } = useTheme();
   const [loading, setLoading] = useState(true);
-  const [schedules, setSchedules] = useState<Schedule[]>([]);
-  const [subjects, setSubjects] = useState<Subject[]>([]);
-  const [sectionName, setSectionName] = useState('');
-  const [studentInfo, setStudentInfo] = useState<any>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  
+  const [student, setStudent] = useState<any>(null);
+  const [schedules, setSchedules] = useState<ScheduleItem[]>([]);
+  
+  const [sectionName, setSectionName] = useState('Loading...');
+  const [grade, setGrade] = useState('Grade 11');
+  const [strand, setStrand] = useState('N/A');
+  const [schoolYear, setSchoolYear] = useState('2025-2026');
+  
+  // Document fallback state
+  const [uploadedDoc, setUploadedDoc] = useState<{
+    url: string;
+    name: string;
+    type: string;
+    isImage: boolean;
+    isGoogleDocs: boolean;
+  } | null>(null);
 
   useEffect(() => {
     loadSchedule();
@@ -62,319 +78,360 @@ export default function StudentSchedule() {
     setLoading(true);
     try {
       const email = await AsyncStorage.getItem('userEmail');
-      if (!email) {
-        setLoading(false);
-        return;
-      }
+      if (!email) throw new Error('No email found');
 
+      // 1. Fetch student
+      let sRow: any = null;
       const { data: userData } = await supabase
-        .from('users').select('*').eq('email', email).single();
-      if (!userData) {
-        setLoading(false);
-        return;
+        .from('users').select('student_id').eq('email', email).maybeSingle();
+
+      if (userData?.student_id) {
+        const { data } = await supabase.from('students').select('*').eq('id', userData.student_id).maybeSingle();
+        sRow = data;
+      }
+      if (!sRow) {
+        const { data } = await supabase.from('students').select('*').eq('email', email).maybeSingle();
+        sRow = data;
       }
 
-      let studentData: any = null;
-      if (userData.student_id) {
-        const { data } = await supabase
-          .from('students')
-          .select(`
-            id, lrn, first_name, last_name, grade_level, strand, section_id,
-            sections:section_id (name)
-          `)
-          .eq('id', userData.student_id)
+      if (!sRow) throw new Error('Student record not found');
+      setStudent(sRow);
+
+      // 2. GRADE LEVEL & STRAND
+      setGrade(sRow.grade_level || 'Grade 11');
+      setStrand(sRow.strand || 'N/A');
+      setSchoolYear('2025-2026');
+
+      // 3. SECTION from sections table
+      const sectionId = sRow.section_id || sRow.sectionId || sRow.section || null;
+      let sectionRecord: any = null;
+
+      if (sectionId) {
+        const { data: secData } = await supabase
+          .from('sections')
+          .select('*')
+          .eq('id', sectionId)
           .maybeSingle();
-        studentData = data;
+        if (secData) sectionRecord = secData;
       }
 
-      if (!studentData) {
-        const { data } = await supabase
-          .from('students')
-          .select(`
-            id, lrn, first_name, last_name, grade_level, strand, section_id,
-            sections:section_id (name)
-          `)
-          .eq('email', email)
-          .maybeSingle();
-        studentData = data;
-      }
+      if (sectionRecord) {
+        setSectionName(sectionRecord.name || sectionRecord.section_name || 'N/A');
+        
+        // 4. Check for uploaded document
+        if (sectionRecord.schedule_doc_url && sectionRecord.shared_at) {
+          const isGDocs = sectionRecord.schedule_doc_type === 'google_docs' ||
+                          (sectionRecord.schedule_doc_url || '').includes('docs.google.com') ||
+                          (sectionRecord.schedule_doc_url || '').includes('drive.google.com');
+          const isImg = (sectionRecord.schedule_doc_type || '').startsWith('image/') ||
+                        /\.(png|jpe?g|webp|gif)$/i.test(sectionRecord.schedule_doc_name || '') ||
+                        (sectionRecord.schedule_doc_url && sectionRecord.schedule_doc_url.startsWith('data:image/'));
 
-      if (!studentData) {
-        setLoading(false);
-        return;
-      }
-
-      setStudentInfo(studentData);
-      const sectionRel = Array.isArray(studentData.sections)
-        ? studentData.sections[0]
-        : studentData.sections;
-      setSectionName(sectionRel?.name || 'Your Section');
-
-      const gradeNum = parseInt(studentData.grade_level);
-      const isSeniorHigh = gradeNum >= 11;
-
-      let subjectsQuery = supabase
-        .from('subjects').select('*').eq('grade_level', studentData.grade_level);
-
-      if (isSeniorHigh && studentData.strand && studentData.strand !== 'N/A') {
-        subjectsQuery = subjectsQuery.eq('strand', studentData.strand);
-      }
-
-      const { data: subjectsData } = await subjectsQuery
-        .order('semester', { ascending: true })
-        .order('quarter', { ascending: true });
-
-      if (subjectsData) setSubjects(subjectsData);
-
-      if (studentData.section_id) {
-        const { data: schedulesData } = await supabase
-          .from('schedules').select('*')
-          .eq('section_id', studentData.section_id)
-          .order('day', { ascending: true });
-
-        if (schedulesData && schedulesData.length > 0) {
-          const teacherIds = [...new Set(schedulesData.map((s: any) => s.teacher_id).filter(Boolean))];
-          const subjectIds = [...new Set(schedulesData.map((s: any) => s.subject_id).filter(Boolean))];
-
-          const teacherMap: Record<string, string> = {};
-          if (teacherIds.length > 0) {
-            const { data: teacherList } = await supabase
-              .from('teachers')
-              .select('id, user_id, users:user_id (first_name, last_name)')
-              .in('id', teacherIds);
-
-            if (teacherList) {
-              teacherList.forEach((t: any) => {
-                const user = Array.isArray(t.users) ? t.users[0] : t.users;
-                teacherMap[t.id] = user
-                  ? `${user.first_name || ''} ${user.last_name || ''}`.trim() || 'No Teacher'
-                  : 'No Teacher';
-              });
-            }
-          }
-
-          const subjectMap: Record<string, any> = {};
-          if (subjectIds.length > 0) {
-            const { data: subjectList } = await supabase
-              .from('subjects').select('id, name, code').in('id', subjectIds);
-            if (subjectList) {
-              subjectList.forEach((sub: any) => {
-                subjectMap[sub.id] = sub;
-              });
-            }
-          }
-
-          const formatted: Schedule[] = schedulesData.map((s: any) => ({
-            id: s.id,
-            day: s.day || 'N/A',
-            time_start: formatTime(s.start_time),
-            time_end: formatTime(s.end_time),
-            subject_name: subjectMap[s.subject_id]?.name || 'Unknown Subject',
-            teacher_name: teacherMap[s.teacher_id] || 'No Teacher',
-            room: s.room || 'N/A',
-          }));
-          setSchedules(formatted);
+          setUploadedDoc({
+            url: sectionRecord.schedule_doc_url,
+            name: sectionRecord.schedule_doc_name || (isGDocs ? 'Official Student Load (Google Docs)' : isImg ? 'Student Load Schedule Image' : 'Student Load Schedule PDF'),
+            type: sectionRecord.schedule_doc_type || (isGDocs ? 'google_docs' : isImg ? 'image/png' : 'application/pdf'),
+            isImage: isImg,
+            isGoogleDocs: isGDocs,
+          });
+        } else {
+          setUploadedDoc(null);
         }
+      } else if (sRow.section_name) {
+        setSectionName(sRow.section_name);
       }
-    } catch (error) {
-      console.error('Error loading schedule:', error);
+
+      // 5. Fetch Schedules (if no uploaded doc)
+      const [{ data: schedData }, { data: subjectsData }, { data: usersData }] = await Promise.all([
+        supabase.from('schedules').select('*'),
+        supabase.from('subjects').select('*'),
+        supabase.from('users').select('id, first_name, last_name, email, role')
+      ]);
+
+      if (schedData && schedData.length > 0) {
+        let filtered = schedData;
+        if (sectionId) {
+          const secFiltered = schedData.filter(s => s.section_id === sectionId);
+          if (secFiltered.length > 0) filtered = secFiltered;
+        }
+
+        const formatted: ScheduleItem[] = filtered.map(s => {
+          let subName = s.subject || s.subject_name || s.subject_title || s.name || s.subject_code;
+          if (!subName && s.subject_id) {
+            const foundSub = subjectsData?.find(sub => sub.id === s.subject_id || sub.code === s.subject_id);
+            if (foundSub) subName = foundSub.name || foundSub.title;
+          }
+
+          let teacherName = s.teacher || s.teacher_name;
+          if (!teacherName && s.teacher_id) {
+            const foundUser = usersData?.find(u => u.id === s.teacher_id);
+            if (foundUser) teacherName = `${foundUser.first_name || ''} ${foundUser.last_name || ''}`.trim() || foundUser.email;
+          }
+
+          return {
+            id: s.id,
+            day: s.day || 'Monday',
+            subject: subName || 'General Subject',
+            teacher: teacherName || '',
+            room: s.room || s.room_name || 'Room 101',
+            start_time: s.start_time || '07:30',
+            end_time: s.end_time || '08:30',
+          };
+        });
+
+        formatted.sort((a, b) => a.start_time.localeCompare(b.start_time));
+        setSchedules(formatted);
+      }
+    } catch (e: any) {
+      console.error(e);
+      Alert.alert('Error', e?.message || 'Failed to load schedule');
     } finally {
       setLoading(false);
     }
   };
 
-  const formatTime = (time: string) => {
-    if (!time) return 'N/A';
-    try {
-      if (time.includes('AM') || time.includes('PM')) return time;
-      const [hours, minutes] = time.split(':');
-      const h = parseInt(hours);
-      const ampm = h >= 12 ? 'PM' : 'AM';
-      const h12 = h % 12 || 12;
-      return `${h12}:${minutes} ${ampm}`;
-    } catch {
-      return time;
+  const formatTime = (timeStr: string) => {
+    if (!timeStr) return '';
+    if (/am|pm/i.test(timeStr)) return timeStr.trim();
+    const parts = timeStr.split(':');
+    if (parts.length >= 2) {
+      let hour = parseInt(parts[0], 10);
+      const minute = parts[1].padStart(2, '0');
+      if (isNaN(hour)) return timeStr;
+      const ampm = hour >= 12 ? 'PM' : 'AM';
+      hour = hour % 12;
+      if (hour === 0) hour = 12;
+      return `${hour}:${minute} ${ampm}`;
     }
+    return timeStr;
   };
 
-  const groupByDay = () => {
-    const grouped: Record<string, Schedule[]> = {};
-    const dayOrder = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-    dayOrder.forEach((day) => {
-      grouped[day] = [];
-    });
-    schedules.forEach((s) => {
-      if (!grouped[s.day]) grouped[s.day] = [];
-      grouped[s.day].push(s);
-    });
-    return grouped;
+  const handleOpenDoc = () => {
+    if (!uploadedDoc) return;
+    Linking.openURL(uploadedDoc.url).catch(() => Alert.alert('Error', 'Could not open document link.'));
   };
 
-  const groupSubjectsByTerm = () => {
-    const grouped: Record<string, Subject[]> = {};
-    subjects.forEach((s) => {
-      const key = s.semester || s.quarter || 'General';
-      if (!grouped[key]) grouped[key] = [];
-      grouped[key].push(s);
+  const todaysClasses = useMemo(() => {
+    const todayIndex = new Date().getDay();
+    const currentDayName = (todayIndex >= 1 && todayIndex <= 5) ? dayNames[todayIndex] : 'Monday';
+    return {
+      name: currentDayName,
+      classes: schedules.filter(s => (s.day || '').toLowerCase() === currentDayName.toLowerCase())
+    };
+  }, [schedules]);
+
+  const groupedSchedules = useMemo(() => {
+    const grouped: Record<string, ScheduleItem[]> = {};
+    daysOrder.forEach(d => grouped[d] = []);
+    schedules.forEach(s => {
+      const matchDay = daysOrder.find(d => d.toLowerCase() === s.day.toLowerCase());
+      if (matchDay) grouped[matchDay].push(s);
     });
     return grouped;
-  };
+  }, [schedules]);
+
+  const uniqueSubjects = useMemo(() => [...new Set(schedules.map(s => s.subject).filter(Boolean))], [schedules]);
+  const uniqueTeachers = useMemo(() => [...new Set(schedules.map(s => s.teacher).filter(Boolean))], [schedules]);
 
   if (loading) {
     return (
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.loadingContainer}>
           <View style={styles.loadingOrb}>
-            <ActivityIndicator size="small" color={primaryColor} />
+            <ActivityIndicator size="small" color={THEME.royalBlue} />
           </View>
         </View>
       </SafeAreaView>
     );
   }
 
-  const grouped = groupByDay();
-  const daysWithClasses = Object.keys(grouped).filter((day) => grouped[day].length > 0);
-  const groupedSubjects = groupSubjectsByTerm();
-  const subjectTerms = Object.keys(groupedSubjects).sort();
-
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.background }]}>
-      <ScrollView
-        style={styles.container}
-        contentContainerStyle={{ paddingBottom: 100 }}
-        showsVerticalScrollIndicator={false}
-      >
+    <SafeAreaView style={styles.safeArea}>
+      <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 100 }} showsVerticalScrollIndicator={false}>
+
+        {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn}>
-            <Ionicons name="arrow-back" size={20} color={NEU.text} />
+          <TouchableOpacity onPress={() => setDrawerOpen(true)} style={styles.iconBtn}>
+            <Ionicons name="menu-outline" size={22} color={THEME.royalBlue} />
           </TouchableOpacity>
-          <Text style={styles.title}>My Schedule</Text>
+          <Text style={styles.title}>Class Program</Text>
           <TouchableOpacity onPress={loadSchedule} style={styles.iconBtn}>
-            <Ionicons name="refresh" size={18} color={NEU.text} />
+            <Ionicons name="refresh" size={18} color={THEME.royalBlue} />
           </TouchableOpacity>
         </View>
 
-        <View style={styles.infoCard}>
-          <View style={[styles.infoIcon, { backgroundColor: primaryColor + '20' }]}>
-            <Ionicons name="school" size={18} color={primaryColor} />
+        {/* Section Info Card */}
+        <View style={styles.sectionCard}>
+          <View style={styles.sectionHeader}>
+            <View style={styles.sectionIcon}>
+              <Ionicons name="people" size={24} color={THEME.royalBlue} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.sectionName}>{sectionName}</Text>
+              <Text style={styles.sectionSub}>Your assigned section and class details</Text>
+            </View>
           </View>
-          <View style={styles.infoTextContainer}>
-            <Text style={styles.infoText}>{sectionName}</Text>
-            {studentInfo && (
-              <Text style={styles.infoSubtext}>
-                {studentInfo.grade_level}
-                {studentInfo.strand && studentInfo.strand !== 'N/A'
-                  ? ` • ${studentInfo.strand}`
-                  : ''}
-              </Text>
-            )}
+          <View style={styles.sectionMetaRow}>
+            <Text style={styles.sectionMeta}><Text style={{fontWeight:'700'}}>Grade:</Text> {grade}</Text>
+            <Text style={styles.sectionMeta}><Text style={{fontWeight:'700'}}>Strand:</Text> {strand}</Text>
+            <Text style={styles.sectionMeta}><Text style={{fontWeight:'700'}}>S.Y.:</Text> {schoolYear}</Text>
+            <Text style={styles.sectionMeta}><Text style={{fontWeight:'700'}}>Classes:</Text> {schedules.length}</Text>
           </View>
         </View>
 
-        {daysWithClasses.length > 0 ? (
+        {/* ===== OFFICIAL UPLOADED SCHEDULE FALLBACK ===== */}
+        {uploadedDoc ? (
+          <View style={styles.docCard}>
+            <View style={styles.docHeader}>
+              <View style={[styles.docIcon, { backgroundColor: uploadedDoc.isGoogleDocs ? '#E8F0FE' : uploadedDoc.isImage ? '#ECFDF5' : '#FEF2F2' }]}>
+                <Ionicons 
+                  name={uploadedDoc.isGoogleDocs ? 'logo-google' : uploadedDoc.isImage ? 'image' : 'document-text'} 
+                  size={24} 
+                  color={uploadedDoc.isGoogleDocs ? '#4285F4' : uploadedDoc.isImage ? THEME.success : THEME.danger} 
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.docTitle}>
+                  {uploadedDoc.isGoogleDocs ? 'Official Google Docs Student Load' : uploadedDoc.isImage ? 'Official Schedule Image' : 'Official PDF Student Load'}
+                </Text>
+                <Text style={styles.docSub} numberOfLines={2}>
+                  Your teacher sent the official section student load schedule. Individual timetable slots have not been entered into the grid yet.
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.docFileBox}>
+              <Ionicons name="document-attach" size={18} color={THEME.royalBlue} />
+              <Text style={styles.docFileName} numberOfLines={1}>{uploadedDoc.name}</Text>
+            </View>
+
+            <TouchableOpacity style={styles.viewDocBtn} onPress={handleOpenDoc}>
+              <Text style={styles.viewDocBtnText}>View Full Schedule</Text>
+              <Ionicons name="open-outline" size={18} color={THEME.white} />
+            </TouchableOpacity>
+          </View>
+        ) : (
+          // ===== REGULAR TIMETABLE FALLBACK =====
           <>
-            <Text style={styles.sectionHeading}>Class Schedule</Text>
-            {daysWithClasses.map((day) => (
-              <View key={day} style={styles.daySection}>
-                <View style={styles.dayHeader}>
-                  <Text style={styles.dayTitle}>{day}</Text>
-                  <View style={styles.dayBadge}>
-                    <Text style={[styles.dayBadgeText, { color: primaryColor }]}>
-                      {grouped[day].length} class{grouped[day].length !== 1 ? 'es' : ''}
-                    </Text>
+            {/* Stats Grid */}
+            <View style={styles.statsGrid}>
+              <View style={styles.statCard}>
+                <Text style={styles.statNum}>{schedules.length}</Text>
+                <Text style={styles.statLbl}>TOTAL CLASSES</Text>
+              </View>
+              <View style={styles.statCard}>
+                <Text style={styles.statNum}>{uniqueSubjects.length}</Text>
+                <Text style={styles.statLbl}>SUBJECTS</Text>
+              </View>
+              <View style={styles.statCard}>
+                <Text style={styles.statNum}>{uniqueTeachers.length}</Text>
+                <Text style={styles.statLbl}>TEACHERS</Text>
+              </View>
+            </View>
+
+            {/* Today's Classes */}
+            <View style={styles.todayCard}>
+              <View style={styles.todayHeader}>
+                <Ionicons name="sunny" size={24} color={THEME.yellow} />
+                <Text style={styles.todayTitle}>Today's Classes - {todaysClasses.name}</Text>
+              </View>
+
+              {todaysClasses.classes.length === 0 ? (
+                <Text style={styles.emptyToday}>No classes scheduled for today.</Text>
+              ) : (
+                todaysClasses.classes.map(c => (
+                  <View key={c.id} style={styles.todayClassItem}>
+                    <View style={styles.todayTime}>
+                      <Text style={styles.todayTimeText}>{formatTime(c.start_time)}</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.todaySubject}>{c.subject}</Text>
+                      <Text style={styles.todayMeta}>
+                        <Ionicons name="location" size={11} /> {c.room}
+                        {c.teacher ? ` • ` : ''}
+                        {c.teacher ? <><Ionicons name="person" size={11} /> {c.teacher}</> : null}
+                      </Text>
+                    </View>
                   </View>
-                </View>
-                {grouped[day]
-                  .sort((a, b) => a.time_start.localeCompare(b.time_start))
-                  .map((schedule) => (
-                    <View key={schedule.id} style={styles.scheduleItem}>
-                      <View style={styles.timeContainer}>
-                        <Text style={[styles.timeStart, { color: primaryColor }]}>
-                          {schedule.time_start}
-                        </Text>
-                        <Text style={styles.timeEnd}>{schedule.time_end}</Text>
-                      </View>
-                      <View style={styles.scheduleInfo}>
-                        <Text style={styles.subjectName}>{schedule.subject_name}</Text>
-                        <Text style={styles.teacherName}>
-                          <Ionicons name="person" size={11} color={NEU.textMuted} />{' '}
-                          {schedule.teacher_name}
-                        </Text>
-                        {schedule.room !== 'N/A' && (
-                          <Text style={styles.roomText}>
-                            <Ionicons name="location" size={11} color={NEU.textMuted} />{' '}
-                            {schedule.room}
-                          </Text>
-                        )}
+                ))
+              )}
+            </View>
+
+            {/* Weekly Schedule List */}
+            <Text style={styles.sectionTitle}>WEEKLY CLASS PROGRAM</Text>
+
+            {schedules.length === 0 ? (
+              <View style={styles.emptyContainer}>
+                <Ionicons name="calendar-outline" size={44} color={THEME.gray} />
+                <Text style={styles.emptyText}>No Class Program Published Yet</Text>
+                <Text style={styles.emptySub}>Please wait for your adviser to upload the schedule.</Text>
+              </View>
+            ) : (
+              daysOrder.map(day => {
+                const classes = groupedSchedules[day];
+                if (classes.length === 0) return null;
+
+                const isToday = day === todaysClasses.name;
+
+                return (
+                  <View key={day} style={{ marginBottom: 16 }}>
+                    <View style={styles.dayHeader}>
+                      <Text style={[styles.dayTitle, isToday && { color: THEME.royalBlue }]}>
+                        {day} {isToday && '(Today)'}
+                      </Text>
+                      <View style={styles.dayBadge}>
+                        <Text style={styles.dayBadgeText}>{classes.length} Classes</Text>
                       </View>
                     </View>
-                  ))}
-              </View>
-            ))}
+
+                    <View style={styles.dayCard}>
+                      {classes.map((c, idx) => (
+                        <View key={c.id} style={[styles.classItem, idx > 0 && styles.classItemBorder]}>
+                          <View style={styles.classTimeCol}>
+                            <Text style={styles.classTime}>{formatTime(c.start_time)}</Text>
+                            <Text style={styles.classTimeEnd}>{formatTime(c.end_time)}</Text>
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.classSubject}>{c.subject}</Text>
+                            <Text style={styles.classMeta}>
+                              <Ionicons name="location-outline" size={12} /> {c.room}
+                              {c.teacher ? ` • ` : ''}
+                              {c.teacher ? <><Ionicons name="person-outline" size={12} /> {c.teacher}</> : null}
+                            </Text>
+                          </View>
+                        </View>
+                      ))}
+                    </View>
+                  </View>
+                );
+              })
+            )}
           </>
-        ) : (
-          <View style={styles.emptyContainer}>
-            <Ionicons name="calendar-outline" size={44} color={NEU.textFaint} />
-            <Text style={styles.emptyText}>No schedule assigned yet</Text>
-            <Text style={styles.emptySubtext}>
-              Your class schedule will appear here once created.
-            </Text>
-          </View>
         )}
 
-        {subjectTerms.length > 0 && (
-          <>
-            <Text style={[styles.sectionHeading, { marginTop: 24 }]}>
-              My Subjects ({subjects.length})
-            </Text>
-            {subjectTerms.map((term) => (
-              <View key={term} style={styles.subjectSection}>
-                <View style={styles.termHeader}>
-                  <Text style={[styles.termTitle, { color: primaryColor }]}>{term}</Text>
-                  <View style={styles.termBadge}>
-                    <Text style={[styles.termBadgeText, { color: primaryColor }]}>
-                      {groupedSubjects[term].length} subject
-                      {groupedSubjects[term].length !== 1 ? 's' : ''}
-                    </Text>
-                  </View>
-                </View>
-                {groupedSubjects[term].map((subject) => (
-                  <View key={subject.id} style={styles.subjectItem}>
-                    <View style={styles.subjectRow}>
-                      <View style={styles.subjectInfo}>
-                        <Text style={styles.subjectItemName}>{subject.name}</Text>
-                        <Text style={styles.subjectItemCode}>{subject.code}</Text>
-                      </View>
-                      <View style={styles.subjectTypeBadge}>
-                        <Text style={[styles.subjectTypeText, { color: primaryColor }]}>
-                          {subject.subject_type}
-                        </Text>
-                      </View>
-                    </View>
-                  </View>
-                ))}
-              </View>
-            ))}
-          </>
-        )}
       </ScrollView>
+
+      {/* ===== SIDEBAR ===== */}
+      <StudentSidebar visible={drawerOpen} onClose={() => setDrawerOpen(false)} />
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: NEU.bg },
+  safeArea: { flex: 1, backgroundColor: THEME.offWhite },
   container: { flex: 1, padding: 16 },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+
   loadingOrb: {
     width: 64, height: 64, borderRadius: 32,
     alignItems: 'center', justifyContent: 'center',
-    backgroundColor: NEU.bg,
-    shadowColor: NEU.darkShadow, shadowOffset: { width: 4, height: 4 },
-    shadowOpacity: 0.8, shadowRadius: 8, elevation: 4,
+    backgroundColor: THEME.offWhite,
+    shadowColor: THEME.darkShadow, shadowOffset: { width: -4, height: -4 },
+    shadowOpacity: 0.6, shadowRadius: 8, elevation: 3,
     borderTopWidth: 1, borderLeftWidth: 1,
-    borderTopColor: NEU.lightShadow, borderLeftColor: NEU.lightShadow,
+    borderTopColor: THEME.lightShadow, borderLeftColor: THEME.lightShadow,
   },
+
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     marginBottom: 16, paddingTop: 16,
@@ -382,120 +439,146 @@ const styles = StyleSheet.create({
   iconBtn: {
     width: 44, height: 44, borderRadius: 22,
     alignItems: 'center', justifyContent: 'center',
-    backgroundColor: NEU.bg,
-    shadowColor: NEU.darkShadow, shadowOffset: { width: 4, height: 4 },
-    shadowOpacity: 0.7, shadowRadius: 8, elevation: 4,
+    backgroundColor: THEME.offWhite,
+    shadowColor: THEME.darkShadow, shadowOffset: { width: 4, height: 4 },
+    shadowOpacity: 0.5, shadowRadius: 8, elevation: 4,
     borderTopWidth: 1, borderLeftWidth: 1,
-    borderTopColor: NEU.lightShadow, borderLeftColor: NEU.lightShadow,
+    borderTopColor: THEME.lightShadow, borderLeftColor: THEME.lightShadow,
   },
-  title: { fontSize: 18, fontWeight: '700', color: NEU.text },
+  title: { fontSize: 18, fontWeight: '700', color: THEME.black },
 
-  infoCard: {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: NEU.bg, borderRadius: 20, padding: 16,
-    marginBottom: 16, gap: 12,
-    shadowColor: NEU.darkShadow, shadowOffset: { width: 5, height: 5 },
-    shadowOpacity: 0.6, shadowRadius: 12, elevation: 5,
-    borderTopWidth: 1, borderLeftWidth: 1,
-    borderTopColor: NEU.lightShadow, borderLeftColor: NEU.lightShadow,
+  sectionCard: {
+    backgroundColor: THEME.white, borderRadius: 16, padding: 16, marginBottom: 16,
+    borderWidth: 1, borderColor: THEME.offWhiteDark,
   },
-  infoIcon: {
-    width: 40, height: 40, borderRadius: 20,
+  sectionHeader: {
+    flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12,
+  },
+  sectionIcon: {
+    width: 44, height: 44, borderRadius: 22,
+    backgroundColor: THEME.royalBlue + '15',
     alignItems: 'center', justifyContent: 'center',
   },
-  infoTextContainer: { flex: 1 },
-  infoText: { fontSize: 15, fontWeight: '700', color: NEU.text },
-  infoSubtext: { fontSize: 11, color: NEU.textMuted, marginTop: 2 },
+  sectionName: { fontSize: 16, fontWeight: '800', color: THEME.black },
+  sectionSub: { fontSize: 12, color: THEME.gray, marginTop: 2 },
+  sectionMetaRow: {
+    flexDirection: 'row', flexWrap: 'wrap', gap: 12,
+    paddingTop: 12, borderTopWidth: 1, borderTopColor: THEME.offWhiteDark,
+  },
+  sectionMeta: { fontSize: 12, color: THEME.darkGray },
 
-  sectionHeading: {
-    fontSize: 15, fontWeight: '700', color: NEU.text,
-    marginBottom: 12, paddingHorizontal: 4,
+  // Document Fallback Card
+  docCard: {
+    backgroundColor: THEME.white, borderRadius: 16, padding: 20, marginBottom: 20,
+    borderWidth: 1, borderColor: THEME.offWhiteDark,
+    shadowColor: THEME.darkShadow, shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1, shadowRadius: 8, elevation: 2,
+  },
+  docHeader: { flexDirection: 'row', gap: 14, marginBottom: 16 },
+  docIcon: {
+    width: 48, height: 48, borderRadius: 12,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  docTitle: { fontSize: 15, fontWeight: '800', color: THEME.black, marginBottom: 4 },
+  docSub: { fontSize: 12, color: THEME.gray, lineHeight: 18 },
+  docFileBox: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: THEME.offWhite, padding: 12, borderRadius: 10, marginBottom: 16,
+    borderWidth: 1, borderColor: THEME.offWhiteDark,
+  },
+  docFileName: { fontSize: 13, fontWeight: '600', color: THEME.royalBlue, flex: 1 },
+  viewDocBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    backgroundColor: THEME.royalBlue, padding: 14, borderRadius: 12,
+  },
+  viewDocBtnText: { fontSize: 14, fontWeight: '700', color: THEME.white },
+
+  statsGrid: { flexDirection: 'row', gap: 10, marginBottom: 20 },
+  statCard: {
+    flex: 1, backgroundColor: THEME.white, paddingVertical: 14, paddingHorizontal: 10,
+    borderRadius: 14, alignItems: 'center',
+    borderWidth: 1, borderColor: THEME.offWhiteDark,
+  },
+  statNum: { fontSize: 20, fontWeight: '800', color: THEME.royalBlue },
+  statLbl: { fontSize: 9, fontWeight: '700', color: THEME.gray, marginTop: 4, textAlign: 'center' },
+
+  todayCard: {
+    backgroundColor: THEME.royalBlue, borderRadius: 16, padding: 16, marginBottom: 20,
+    shadowColor: THEME.royalBlueDark, shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.3, shadowRadius: 10, elevation: 6,
+  },
+  todayHeader: {
+    flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12,
+    paddingBottom: 10, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.2)',
+  },
+  todayTitle: { fontSize: 14, fontWeight: '800', color: THEME.white },
+  emptyToday: { fontSize: 13, color: 'rgba(255,255,255,0.7)', fontStyle: 'italic' },
+  todayClassItem: {
+    flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 10,
+  },
+  todayTime: {
+    backgroundColor: 'rgba(255,255,255,0.15)', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8,
+  },
+  todayTimeText: { fontSize: 11, fontWeight: '700', color: THEME.yellow },
+  todaySubject: { fontSize: 14, fontWeight: '700', color: THEME.white, marginBottom: 2 },
+  todayMeta: { fontSize: 11, color: 'rgba(255,255,255,0.8)' },
+
+  sectionTitle: {
+    fontSize: 12, fontWeight: '800', color: THEME.gray, letterSpacing: 1,
+    marginBottom: 12, marginTop: 4,
   },
 
-  daySection: { marginBottom: 16 },
   dayHeader: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    marginBottom: 8, paddingHorizontal: 4,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8,
   },
-  dayTitle: { fontSize: 15, fontWeight: '700', color: NEU.text },
+  dayTitle: { fontSize: 15, fontWeight: '700', color: THEME.black },
   dayBadge: {
-    backgroundColor: NEU.bg,
-    paddingHorizontal: 10, paddingVertical: 2, borderRadius: 12,
-    shadowColor: NEU.darkShadow, shadowOffset: { width: 2, height: 2 },
-    shadowOpacity: 0.4, shadowRadius: 3, elevation: 1,
-    borderTopWidth: 1, borderLeftWidth: 1,
-    borderTopColor: NEU.lightShadow, borderLeftColor: NEU.lightShadow,
+    backgroundColor: THEME.royalBlue + '15', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12,
   },
-  dayBadgeText: { fontSize: 11, fontWeight: '700' },
+  dayBadgeText: { fontSize: 11, fontWeight: '700', color: THEME.royalBlue },
 
-  scheduleItem: {
-    flexDirection: 'row',
-    backgroundColor: NEU.bg, borderRadius: 16, padding: 16,
-    marginBottom: 10,
-    shadowColor: NEU.darkShadow, shadowOffset: { width: 4, height: 4 },
-    shadowOpacity: 0.5, shadowRadius: 8, elevation: 4,
+  dayCard: {
+    backgroundColor: THEME.offWhite, borderRadius: 16,
+    shadowColor: THEME.darkShadow, shadowOffset: { width: 5, height: 5 },
+    shadowOpacity: 0.4, shadowRadius: 10, elevation: 4,
     borderTopWidth: 1, borderLeftWidth: 1,
-    borderTopColor: NEU.lightShadow, borderLeftColor: NEU.lightShadow,
+    borderTopColor: THEME.lightShadow, borderLeftColor: THEME.lightShadow,
+    overflow: 'hidden',
   },
-  timeContainer: {
-    alignItems: 'center', justifyContent: 'center',
-    paddingRight: 16, borderRightWidth: 2, borderRightColor: NEU.bgDark,
-    minWidth: 80,
+  classItem: {
+    flexDirection: 'row', padding: 14, gap: 14,
   },
-  timeStart: { fontSize: 13, fontWeight: '800' },
-  timeEnd: { fontSize: 11, color: NEU.textMuted, marginTop: 2 },
-  scheduleInfo: { flex: 1, marginLeft: 16 },
-  subjectName: { fontSize: 15, fontWeight: '700', color: NEU.text },
-  teacherName: { fontSize: 11, color: NEU.textMuted, marginTop: 4 },
-  roomText: { fontSize: 11, color: NEU.textMuted, marginTop: 2 },
-
-  subjectSection: { marginBottom: 16 },
-  termHeader: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    marginBottom: 8, paddingHorizontal: 4,
+  classItemBorder: { borderTopWidth: 1, borderTopColor: THEME.offWhiteDark },
+  classTimeCol: {
+    width: 75, alignItems: 'center', justifyContent: 'center',
+    borderRightWidth: 2, borderRightColor: THEME.offWhiteDark, paddingRight: 10,
   },
-  termTitle: { fontSize: 15, fontWeight: '700' },
-  termBadge: {
-    backgroundColor: NEU.bg,
-    paddingHorizontal: 10, paddingVertical: 2, borderRadius: 12,
-    shadowColor: NEU.darkShadow, shadowOffset: { width: 2, height: 2 },
-    shadowOpacity: 0.4, shadowRadius: 3, elevation: 1,
-    borderTopWidth: 1, borderLeftWidth: 1,
-    borderTopColor: NEU.lightShadow, borderLeftColor: NEU.lightShadow,
-  },
-  termBadgeText: { fontSize: 11, fontWeight: '700' },
-
-  subjectItem: {
-    backgroundColor: NEU.bg, borderRadius: 14, padding: 16, marginBottom: 10,
-    shadowColor: NEU.darkShadow, shadowOffset: { width: 4, height: 4 },
-    shadowOpacity: 0.5, shadowRadius: 8, elevation: 4,
-    borderTopWidth: 1, borderLeftWidth: 1,
-    borderTopColor: NEU.lightShadow, borderLeftColor: NEU.lightShadow,
-  },
-  subjectRow: { flexDirection: 'row', alignItems: 'center' },
-  subjectInfo: { flex: 1 },
-  subjectItemName: { fontSize: 13, fontWeight: '600', color: NEU.text },
-  subjectItemCode: { fontSize: 11, color: NEU.textMuted, marginTop: 2 },
-  subjectTypeBadge: {
-    paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12,
-    backgroundColor: NEU.bg,
-    shadowColor: NEU.darkShadow, shadowOffset: { width: 2, height: 2 },
-    shadowOpacity: 0.4, shadowRadius: 3, elevation: 1,
-    borderTopWidth: 1, borderLeftWidth: 1,
-    borderTopColor: NEU.lightShadow, borderLeftColor: NEU.lightShadow,
-  },
-  subjectTypeText: { fontSize: 11, fontWeight: '700' },
+  classTime: { fontSize: 12, fontWeight: '800', color: THEME.royalBlue },
+  classTimeEnd: { fontSize: 10, color: THEME.gray, marginTop: 2 },
+  classSubject: { fontSize: 14, fontWeight: '700', color: THEME.black, marginBottom: 4 },
+  classMeta: { fontSize: 11, color: THEME.gray },
 
   emptyContainer: {
     alignItems: 'center', padding: 40,
-    backgroundColor: NEU.bg, borderRadius: 20,
-    shadowColor: NEU.darkShadow, shadowOffset: { width: 6, height: 6 },
-    shadowOpacity: 0.6, shadowRadius: 12, elevation: 5,
-    borderTopWidth: 1, borderLeftWidth: 1,
-    borderTopColor: NEU.lightShadow, borderLeftColor: NEU.lightShadow,
+    backgroundColor: THEME.white, borderRadius: 16, marginBottom: 20,
+    borderWidth: 1, borderColor: THEME.offWhiteDark,
   },
-  emptyText: { fontSize: 15, color: NEU.textMuted, marginTop: 16, fontWeight: '600' },
-  emptySubtext: {
-    fontSize: 13, color: NEU.textFaint, textAlign: 'center', marginTop: 4,
+  emptyText: { fontSize: 16, fontWeight: '700', color: THEME.black, marginTop: 12 },
+  emptySub: { fontSize: 13, color: THEME.gray, textAlign: 'center', marginTop: 4 },
+
+  summaryCard: {
+    backgroundColor: THEME.white, borderRadius: 16, padding: 16, marginBottom: 16,
+    borderWidth: 1, borderColor: THEME.offWhiteDark,
   },
+  summaryTitle: {
+    fontSize: 14, fontWeight: '700', color: THEME.black, marginBottom: 12,
+  },
+  chipsContainer: {
+    flexDirection: 'row', flexWrap: 'wrap', gap: 8,
+  },
+  chip: {
+    backgroundColor: THEME.royalBlue + '10', paddingHorizontal: 12, paddingVertical: 6,
+    borderRadius: 20, borderWidth: 1, borderColor: THEME.royalBlue + '30',
+  },
+  chipText: { fontSize: 12, fontWeight: '600', color: THEME.royalBlue },
 });

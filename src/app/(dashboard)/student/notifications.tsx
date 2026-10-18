@@ -5,25 +5,33 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
-    RefreshControl,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-const NEU = {
-  bg: '#E8EDF2',
-  bgDark: '#D1D9E6',
+const THEME = {
+  royalBlue: '#1E3A8A',
+  royalBlueDark: '#152C6B',
+  yellow: '#F5C518',
+  yellowLight: '#FFD84D',
+  white: '#FFFFFF',
+  offWhite: '#F0F4FA',
+  offWhiteDark: '#D6E0F0',
   lightShadow: '#FFFFFF',
-  darkShadow: '#A3B1C6',
-  text: '#2E3A4D',
-  textMuted: '#7A8699',
-  textFaint: '#A0ACBE',
-  accent: '#4C6FFF',
+  darkShadow: '#B8C5DB',
+  gray: '#8A94A6',
+  darkGray: '#4A5568',
+  black: '#1A202C',
+  success: '#22C55E',
+  danger: '#EF4444',
+  warning: '#F59E0B',
+  info: '#3B82F6',
 };
 
 type AppNotification = {
@@ -38,10 +46,10 @@ type AppNotification = {
 };
 
 const TYPE_ICONS: Record<string, { icon: string; color: string }> = {
-  grade_added: { icon: 'star', color: '#22C55E' },
+  grade_added: { icon: 'star', color: THEME.success },
   grade_updated: { icon: 'star-half', color: '#84CC16' },
-  attendance_marked: { icon: 'calendar', color: '#4C6FFF' },
-  schedule_changed: { icon: 'time', color: '#F59E0B' },
+  attendance_marked: { icon: 'calendar', color: THEME.royalBlue },
+  schedule_changed: { icon: 'time', color: THEME.warning },
   announcement: { icon: 'megaphone', color: '#8B5CF6' },
   parent_linked: { icon: 'people', color: '#EC4899' },
 };
@@ -54,34 +62,22 @@ export default function StudentNotifications() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [userId, setUserId] = useState<string | null>(null);
 
-  useEffect(() => {
-    loadNotifications();
-  }, []);
+  useEffect(() => { loadNotifications(); }, []);
 
   const loadNotifications = async () => {
     try {
       const email = await AsyncStorage.getItem('userEmail');
-      if (!email) {
-        setLoading(false);
-        return;
-      }
+      if (!email) { setLoading(false); return; }
 
       const { data: userData } = await supabase
-        .from('users')
-        .select('id')
-        .eq('email', email)
-        .maybeSingle();
+        .from('users').select('id').eq('email', email).maybeSingle();
 
-      if (!userData?.id) {
-        setLoading(false);
-        return;
-      }
+      if (!userData?.id) { setLoading(false); return; }
 
       setUserId(userData.id);
 
       const { data, error } = await supabase
-        .from('notifications')
-        .select('*')
+        .from('notifications').select('*')
         .eq('user_id', userData.id)
         .order('created_at', { ascending: false })
         .limit(50);
@@ -111,9 +107,7 @@ export default function StudentNotifications() {
   const handleNotificationPress = async (notification: AppNotification) => {
     if (!notification.read) {
       await supabase
-        .from('notifications')
-        .update({ read: true })
-        .eq('id', notification.id);
+        .from('notifications').update({ read: true }).eq('id', notification.id);
 
       setNotifications((prev) =>
         prev.map((n) => (n.id === notification.id ? { ...n, read: true } : n))
@@ -123,7 +117,6 @@ export default function StudentNotifications() {
 
     const screen = notification.data?.screen;
     if (screen && typeof screen === 'string') {
-      // Cast to any to bypass strict typed-routes for dynamic strings
       router.push(screen as any);
     }
   };
@@ -131,10 +124,8 @@ export default function StudentNotifications() {
   const handleMarkAllRead = async () => {
     if (!userId) return;
     await supabase
-      .from('notifications')
-      .update({ read: true })
-      .eq('user_id', userId)
-      .eq('read', false);
+      .from('notifications').update({ read: true })
+      .eq('user_id', userId).eq('read', false);
 
     setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
     setUnreadCount(0);
@@ -160,7 +151,7 @@ export default function StudentNotifications() {
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.loadingContainer}>
           <View style={styles.loadingOrb}>
-            <ActivityIndicator size="small" color={NEU.accent} />
+            <ActivityIndicator size="small" color={THEME.royalBlue} />
           </View>
         </View>
       </SafeAreaView>
@@ -171,7 +162,7 @@ export default function StudentNotifications() {
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn}>
-          <Ionicons name="arrow-back" size={20} color={NEU.text} />
+          <Ionicons name="arrow-back" size={20} color={THEME.royalBlue} />
         </TouchableOpacity>
         <View style={styles.headerCenter}>
           <Text style={styles.title}>Notifications</Text>
@@ -183,7 +174,7 @@ export default function StudentNotifications() {
         </View>
         {unreadCount > 0 ? (
           <TouchableOpacity onPress={handleMarkAllRead} style={styles.iconBtn}>
-            <Ionicons name="checkmark-done" size={18} color={NEU.accent} />
+            <Ionicons name="checkmark-done" size={18} color={THEME.royalBlue} />
           </TouchableOpacity>
         ) : (
           <View style={{ width: 44 }} />
@@ -198,8 +189,8 @@ export default function StudentNotifications() {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={handleRefresh}
-            tintColor={NEU.accent}
-            colors={[NEU.accent]}
+            tintColor={THEME.royalBlue}
+            colors={[THEME.royalBlue]}
           />
         }
       >
@@ -207,7 +198,7 @@ export default function StudentNotifications() {
           notifications.map((notification) => {
             const typeInfo = TYPE_ICONS[notification.type] || {
               icon: 'notifications',
-              color: NEU.accent,
+              color: THEME.royalBlue,
             };
 
             return (
@@ -218,7 +209,7 @@ export default function StudentNotifications() {
                   !notification.read && styles.notificationUnread,
                 ]}
                 onPress={() => handleNotificationPress(notification)}
-                activeOpacity={0.7}
+                activeOpacity={0.85}
               >
                 <View
                   style={[
@@ -226,11 +217,7 @@ export default function StudentNotifications() {
                     { backgroundColor: typeInfo.color + '20' },
                   ]}
                 >
-                  <Ionicons
-                    name={typeInfo.icon as any}
-                    size={20}
-                    color={typeInfo.color}
-                  />
+                  <Ionicons name={typeInfo.icon as any} size={20} color={typeInfo.color} />
                 </View>
 
                 <View style={styles.notificationContent}>
@@ -248,13 +235,13 @@ export default function StudentNotifications() {
                   </Text>
                 </View>
 
-                <Ionicons name="chevron-forward" size={16} color={NEU.textFaint} />
+                <Ionicons name="chevron-forward" size={16} color={THEME.gray} />
               </TouchableOpacity>
             );
           })
         ) : (
           <View style={styles.emptyContainer}>
-            <Ionicons name="notifications-off-outline" size={44} color={NEU.textFaint} />
+            <Ionicons name="notifications-off-outline" size={44} color={THEME.gray} />
             <Text style={styles.emptyText}>No notifications yet</Text>
             <Text style={styles.emptySubtext}>
               You'll see updates about your grades, attendance, and schedule here.
@@ -267,19 +254,22 @@ export default function StudentNotifications() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: NEU.bg },
+  safeArea: { flex: 1, backgroundColor: THEME.offWhite },
   container: { flex: 1 },
   contentContainer: { padding: spacing.md, paddingBottom: spacing.xxl },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+
   loadingOrb: {
     width: 64, height: 64, borderRadius: 32,
     alignItems: 'center', justifyContent: 'center',
-    backgroundColor: NEU.bg,
-    shadowColor: NEU.darkShadow, shadowOffset: { width: 4, height: 4 },
-    shadowOpacity: 0.8, shadowRadius: 8, elevation: 4,
+    backgroundColor: THEME.offWhite,
+    shadowColor: THEME.darkShadow,
+    shadowOffset: { width: -4, height: -4 },
+    shadowOpacity: 0.6, shadowRadius: 8, elevation: 3,
     borderTopWidth: 1, borderLeftWidth: 1,
-    borderTopColor: NEU.lightShadow, borderLeftColor: NEU.lightShadow,
+    borderTopColor: THEME.lightShadow, borderLeftColor: THEME.lightShadow,
   },
+
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
@@ -288,35 +278,39 @@ const styles = StyleSheet.create({
     flex: 1, flexDirection: 'row', alignItems: 'center',
     justifyContent: 'center', gap: spacing.sm,
   },
-  title: { fontSize: typography.sizes.lg, fontWeight: '700', color: NEU.text },
+  title: { fontSize: typography.sizes.lg, fontWeight: '700', color: THEME.black },
   unreadBadge: {
-    backgroundColor: NEU.accent,
+    backgroundColor: THEME.yellow,
     paddingHorizontal: 8, paddingVertical: 2,
     borderRadius: 10, minWidth: 20, alignItems: 'center',
   },
-  unreadBadgeText: { color: '#FFFFFF', fontSize: 11, fontWeight: '700' },
+  unreadBadgeText: { color: THEME.royalBlue, fontSize: 11, fontWeight: '800' },
+
   iconBtn: {
     width: 44, height: 44, borderRadius: 22,
     alignItems: 'center', justifyContent: 'center',
-    backgroundColor: NEU.bg,
-    shadowColor: NEU.darkShadow, shadowOffset: { width: 3, height: 3 },
-    shadowOpacity: 0.6, shadowRadius: 6, elevation: 3,
-    borderTopWidth: 1, borderLeftWidth: 1,
-    borderTopColor: NEU.lightShadow, borderLeftColor: NEU.lightShadow,
-  },
-  notificationCard: {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: NEU.bg, borderRadius: 16,
-    padding: spacing.md, marginBottom: spacing.sm,
-    shadowColor: NEU.darkShadow, shadowOffset: { width: 4, height: 4 },
+    backgroundColor: THEME.offWhite,
+    shadowColor: THEME.darkShadow,
+    shadowOffset: { width: 4, height: 4 },
     shadowOpacity: 0.5, shadowRadius: 8, elevation: 4,
     borderTopWidth: 1, borderLeftWidth: 1,
-    borderTopColor: NEU.lightShadow, borderLeftColor: NEU.lightShadow,
+    borderTopColor: THEME.lightShadow, borderLeftColor: THEME.lightShadow,
+  },
+
+  notificationCard: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: THEME.offWhite, borderRadius: 16,
+    padding: spacing.md, marginBottom: spacing.sm,
+    shadowColor: THEME.darkShadow,
+    shadowOffset: { width: 4, height: 4 },
+    shadowOpacity: 0.5, shadowRadius: 8, elevation: 4,
+    borderTopWidth: 1, borderLeftWidth: 1,
+    borderTopColor: THEME.lightShadow, borderLeftColor: THEME.lightShadow,
     gap: spacing.sm,
   },
   notificationUnread: {
     borderLeftWidth: 3,
-    borderLeftColor: NEU.accent,
+    borderLeftColor: THEME.royalBlue,
   },
   notificationIcon: {
     width: 44, height: 44, borderRadius: 22,
@@ -326,32 +320,34 @@ const styles = StyleSheet.create({
   notificationHeader: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   notificationTitle: {
     fontSize: typography.sizes.sm, fontWeight: '700',
-    color: NEU.text, flex: 1,
+    color: THEME.black, flex: 1,
   },
   unreadDot: {
-    width: 8, height: 8, borderRadius: 4, backgroundColor: NEU.accent,
+    width: 8, height: 8, borderRadius: 4, backgroundColor: THEME.yellow,
   },
   notificationBody: {
-    fontSize: typography.sizes.xs, color: NEU.textMuted,
+    fontSize: typography.sizes.xs, color: THEME.gray,
     marginTop: 4, lineHeight: 16,
   },
   notificationTime: {
-    fontSize: 10, color: NEU.textFaint, marginTop: 6, fontWeight: '500',
+    fontSize: 10, color: THEME.gray, marginTop: 6, fontWeight: '500',
   },
+
   emptyContainer: {
     alignItems: 'center', padding: spacing.xxxl,
-    backgroundColor: NEU.bg, borderRadius: 20, marginTop: spacing.lg,
-    shadowColor: NEU.darkShadow, shadowOffset: { width: 6, height: 6 },
-    shadowOpacity: 0.6, shadowRadius: 12, elevation: 5,
+    backgroundColor: THEME.offWhite, borderRadius: 20, marginTop: spacing.lg,
+    shadowColor: THEME.darkShadow,
+    shadowOffset: { width: 6, height: 6 },
+    shadowOpacity: 0.5, shadowRadius: 12, elevation: 5,
     borderTopWidth: 1, borderLeftWidth: 1,
-    borderTopColor: NEU.lightShadow, borderLeftColor: NEU.lightShadow,
+    borderTopColor: THEME.lightShadow, borderLeftColor: THEME.lightShadow,
   },
   emptyText: {
-    fontSize: typography.sizes.md, color: NEU.textMuted,
+    fontSize: typography.sizes.md, color: THEME.darkGray,
     marginTop: spacing.md, fontWeight: '600',
   },
   emptySubtext: {
-    fontSize: typography.sizes.sm, color: NEU.textFaint,
+    fontSize: typography.sizes.sm, color: THEME.gray,
     textAlign: 'center', marginTop: spacing.xs,
   },
 });

@@ -1,5 +1,5 @@
-import { ACCENT_PRESETS, useTheme } from '@/app/_context/themecontext';
-import { colors, spacing, typography } from '@/styles';
+import { supabase } from '@/lib/supabase/client';
+import { spacing, typography } from '@/styles';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { usePathname, useRouter } from 'expo-router';
@@ -10,7 +10,6 @@ import {
   Modal,
   ScrollView,
   StyleSheet,
-  Switch,
   Text,
   TouchableOpacity,
   View,
@@ -19,19 +18,18 @@ import {
 const { width } = Dimensions.get('window');
 const SIDEBAR_WIDTH = Math.min(width * 0.78, 320);
 
-const NAV_ITEMS: {
-  key: string;
-  label: string;
-  icon: keyof typeof Ionicons.glyphMap;
-  route: string;
-}[] = [
-  { key: 'index', label: 'Dashboard', icon: 'grid', route: '/student' },
-  { key: 'grades', label: 'Grades', icon: 'star', route: '/student/grades' },
-  { key: 'attendance', label: 'Attendance', icon: 'calendar', route: '/student/attendance' },
-  { key: 'schedule', label: 'Schedule', icon: 'time', route: '/student/schedule' },
-  { key: 'section', label: 'My Section', icon: 'people', route: '/student/section' },
-  { key: 'profile', label: 'Profile', icon: 'person-circle', route: '/student/profile' },
-];
+const THEME = {
+  royalBlue: '#1E3A8A',
+  royalBlueSoft: 'rgba(30,58,138,0.12)',
+  yellow: '#F5C518',
+  white: '#FFFFFF',
+  offWhite: '#F5F7FA',
+  lightGray: '#E5EAF2',
+  gray: '#8A94A6',
+  darkGray: '#4A5568',
+  black: '#1A202C',
+  danger: '#EF4444',
+};
 
 type Props = {
   visible: boolean;
@@ -41,19 +39,94 @@ type Props = {
 export default function StudentSidebar({ visible, onClose }: Props) {
   const router = useRouter();
   const pathname = usePathname();
-  const { isDark, setIsDark, primaryColor, setPrimaryColor, theme } = useTheme();
   const [studentName, setStudentName] = useState('Student');
   const [studentInfo, setStudentInfo] = useState('');
-  const [showSettings, setShowSettings] = useState(false);
 
+  // ===== Load real student data from Supabase on open =====
   useEffect(() => {
-    const loadName = async () => {
-      const name = await AsyncStorage.getItem('studentName');
-      const info = await AsyncStorage.getItem('studentInfo');
-      if (name) setStudentName(name);
-      if (info) setStudentInfo(info);
+    if (!visible) return;
+
+    const loadStudent = async () => {
+      try {
+        const email = await AsyncStorage.getItem('userEmail');
+        if (!email) return;
+
+        const { data: userData } = await supabase
+          .from('users')
+          .select('student_id, first_name, last_name')
+          .eq('email', email)
+          .maybeSingle();
+
+        let studentData: any = null;
+
+        if (userData?.student_id) {
+          const { data } = await supabase
+            .from('students')
+            .select(`
+              id, first_name, last_name, middle_name, suffix,
+              grade_level, strand,
+              sections:section_id (name)
+            `)
+            .eq('id', userData.student_id)
+            .maybeSingle();
+          studentData = data;
+        }
+
+        if (!studentData) {
+          const { data } = await supabase
+            .from('students')
+            .select(`
+              id, first_name, last_name, middle_name, suffix,
+              grade_level, strand,
+              sections:section_id (name)
+            `)
+            .eq('email', email)
+            .maybeSingle();
+          studentData = data;
+        }
+
+        if (!studentData) {
+          const cachedName = await AsyncStorage.getItem('studentName');
+          const cachedInfo = await AsyncStorage.getItem('studentInfo');
+          if (cachedName) setStudentName(cachedName);
+          if (cachedInfo) setStudentInfo(cachedInfo);
+          return;
+        }
+
+        const middle = studentData.middle_name
+          ? ` ${studentData.middle_name.charAt(0)}.`
+          : '';
+        const suffix = studentData.suffix ? ` ${studentData.suffix}` : '';
+        const fullName =
+          `${studentData.first_name || ''}${middle} ${studentData.last_name || ''}${suffix}`.trim() ||
+          'Student';
+
+        const sectionRel = Array.isArray(studentData.sections)
+          ? studentData.sections[0]
+          : studentData.sections;
+
+        const parts: string[] = [];
+        if (studentData.grade_level && studentData.grade_level !== 'N/A') {
+          parts.push(studentData.grade_level);
+        }
+        if (studentData.strand && studentData.strand !== 'N/A') {
+          parts.push(studentData.strand);
+        }
+        if (sectionRel?.name) {
+          parts.push(sectionRel.name);
+        }
+
+        setStudentName(fullName);
+        setStudentInfo(parts.join(' · '));
+
+        await AsyncStorage.setItem('studentName', fullName);
+        await AsyncStorage.setItem('studentInfo', parts.join(' · '));
+      } catch (err) {
+        console.error('Error loading student in sidebar:', err);
+      }
     };
-    loadName();
+
+    loadStudent();
   }, [visible]);
 
   const handleNavigate = (route: string) => {
@@ -61,10 +134,8 @@ export default function StudentSidebar({ visible, onClose }: Props) {
     setTimeout(() => router.push(route as any), 180);
   };
 
-    // ===== SIGN OUT (functional) =====
   const handleLogout = () => {
     onClose();
-
     setTimeout(() => {
       Alert.alert(
         'Sign Out',
@@ -76,27 +147,14 @@ export default function StudentSidebar({ visible, onClose }: Props) {
             style: 'destructive',
             onPress: async () => {
               try {
-                // Navigate first so the UI switches immediately
                 router.replace('/(auth)/login' as any);
-
-                // Then clear everything
                 const keys = [
-                  'userEmail',
-                  'userId',
-                  'userRole',
-                  'parentName',
-                  'parentInfo',
-                  'studentName',
-                  'studentInfo',
-                  'teacherName',
-                  'teacherInfo',
-                  'currentUser',
+                  'userEmail', 'userId', 'userRole',
+                  'parentName', 'parentInfo', 'studentName', 'studentInfo',
+                  'teacherName', 'teacherInfo', 'currentUser',
                 ];
-                for (const key of keys) {
-                  await AsyncStorage.removeItem(key);
-                }
-              } catch (e) {
-                console.error('Logout error:', e);
+                for (const key of keys) await AsyncStorage.removeItem(key);
+              } catch {
                 router.replace('/(auth)/login' as any);
               }
             },
@@ -113,203 +171,96 @@ export default function StudentSidebar({ visible, onClose }: Props) {
     return parts.slice(0, 2).map(p => p[0]).join('').toUpperCase();
   };
 
-  const isActive = (item: (typeof NAV_ITEMS)[number]) => {
-    if (item.key === 'index') {
-      return pathname === '/student' || pathname === '/student/index';
-    }
-    return pathname.includes(`/student/${item.key}`);
+  const isActive = (route: string) => {
+    if (route === '/student') return pathname === '/student' || pathname === '/student/index';
+    return pathname.includes(route);
+  };
+
+  const NavItem = ({ label, icon, route, color = THEME.black }: any) => {
+    const active = isActive(route);
+    return (
+      <TouchableOpacity
+        style={[styles.navItem, active && styles.navItemActive]}
+        onPress={() => handleNavigate(route)}
+        activeOpacity={0.7}
+      >
+        <View style={[styles.navIcon, active && styles.navIconActive]}>
+          <Ionicons
+            name={icon}
+            size={20}
+            color={active ? THEME.white : (color === THEME.danger ? THEME.danger : THEME.royalBlue)}
+          />
+        </View>
+        <Text style={[styles.navLabel, active && styles.navLabelActive, { color: active ? THEME.white : color }]}>
+          {label}
+        </Text>
+        {active && <View style={styles.activeDot} />}
+      </TouchableOpacity>
+    );
   };
 
   return (
-    <>
-      {/* ===== NAV DRAWER ===== */}
-      <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-        <View style={styles.overlay}>
-          <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={onClose} />
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.overlay}>
+        <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={onClose} />
 
-          <View style={[styles.panel, { backgroundColor: theme.card }]}>
-            <View style={[styles.header, { borderBottomColor: theme.cardBorder }]}>
-              <View style={[styles.avatar, { backgroundColor: primaryColor }]}>
+        <View style={styles.panel}>
+          
+          <View style={styles.topSpacer} />
+
+          {/* ===== Scrollable Nav Area ===== */}
+          <ScrollView style={styles.nav} showsVerticalScrollIndicator={false}>
+            
+            <Text style={styles.sectionTitle}>MAIN MENU</Text>
+            <NavItem label="Dashboard" icon="grid" route="/student" />
+            <NavItem label="Attendance" icon="calendar" route="/student/attendance" />
+            <NavItem label="Requirements" icon="document-text" route="/student/requirements" />
+
+            <Text style={styles.sectionTitle}>ACADEMICS</Text>
+            <NavItem label="Assessments" icon="clipboard" route="/student/assessments" />
+            <NavItem label="Class Program" icon="time" route="/student/schedule" />
+            <NavItem label="My Grades" icon="star" route="/student/grades" />
+
+            <Text style={styles.sectionTitle}>DISCIPLINE & CONDUCT</Text>
+            <NavItem label="Guidance & Violations" icon="shield-checkmark" route="/student/violations" />
+
+          </ScrollView>
+
+          {/* ===== Bottom Section (Pinned) ===== */}
+          <View style={styles.bottomSection}>
+            
+            <Text style={styles.sectionTitle}>ACCOUNT</Text>
+
+            {/* Profile & Logout aligned together */}
+            <NavItem label="My Profile" icon="person-outline" route="/student/profile" />
+            
+            <TouchableOpacity style={styles.navItem} onPress={handleLogout} activeOpacity={0.7}>
+              <View style={styles.navIcon}>
+                <Ionicons name="log-out-outline" size={20} color={THEME.danger} />
+              </View>
+              <Text style={[styles.navLabel, { color: THEME.danger }]}>Logout</Text>
+            </TouchableOpacity>
+
+            {/* Divider */}
+            <View style={styles.divider} />
+
+            {/* Student Info */}
+            <View style={styles.profileHeader}>
+              <View style={styles.avatar}>
                 <Text style={styles.avatarText}>{getInitials()}</Text>
               </View>
-              <Text style={[styles.name, { color: theme.text }]} numberOfLines={1}>
-                {studentName}
-              </Text>
-              {studentInfo ? (
-                <Text style={[styles.info, { color: theme.textMuted }]} numberOfLines={1}>
-                  {studentInfo}
-                </Text>
-              ) : null}
+              <View style={styles.headerTextCol}>
+                <Text style={styles.name} numberOfLines={1}>{studentName}</Text>
+                {studentInfo ? (
+                  <Text style={styles.info} numberOfLines={1}>{studentInfo}</Text>
+                ) : null}
+              </View>
             </View>
 
-            <ScrollView style={styles.nav} showsVerticalScrollIndicator={false}>
-              {NAV_ITEMS.map(item => {
-                const active = isActive(item);
-                return (
-                  <TouchableOpacity
-                    key={item.key}
-                    style={[
-                      styles.navItem,
-                      active && { backgroundColor: primaryColor + '15' },
-                    ]}
-                    onPress={() => handleNavigate(item.route)}
-                    activeOpacity={0.7}
-                  >
-                    <View
-                      style={[
-                        styles.navIcon,
-                        {
-                          backgroundColor: active
-                            ? primaryColor + '20'
-                            : theme.background,
-                        },
-                      ]}
-                    >
-                      <Ionicons
-                        name={item.icon}
-                        size={20}
-                        color={active ? primaryColor : theme.textMuted}
-                      />
-                    </View>
-                    <Text
-                      style={[
-                        styles.navLabel,
-                        {
-                          color: active ? primaryColor : theme.text,
-                          fontWeight: active ? '700' : '500',
-                        },
-                      ]}
-                    >
-                      {item.label}
-                    </Text>
-                    {active && (
-                      <View style={[styles.activeDot, { backgroundColor: primaryColor }]} />
-                    )}
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
-
-            <View style={[styles.footer, { borderTopColor: theme.cardBorder }]}>
-              <TouchableOpacity
-                style={styles.footerBtn}
-                onPress={() => {
-                  onClose();
-                  setTimeout(() => setShowSettings(true), 180);
-                }}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="color-palette" size={18} color={primaryColor} />
-                <Text style={[styles.footerText, { color: theme.text }]}>Appearance</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.footerBtn} onPress={handleLogout} activeOpacity={0.7}>
-                <Ionicons name="log-out-outline" size={18} color={colors.error} />
-                <Text style={[styles.footerText, { color: colors.error }]}>Sign out</Text>
-              </TouchableOpacity>
-            </View>
           </View>
         </View>
-      </Modal>
-
-      {/* ===== SETTINGS MODAL ===== */}
-      <Modal
-        visible={showSettings}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowSettings(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.settingsSheet, { backgroundColor: theme.background }]}>
-            <View style={styles.settingsHeader}>
-              <Text style={[styles.settingsTitle, { color: theme.text }]}>Settings</Text>
-              <TouchableOpacity onPress={() => setShowSettings(false)}>
-                <Ionicons name="close" size={24} color={theme.textMuted} />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView showsVerticalScrollIndicator={false}>
-              <Text style={[styles.sectionLabel, { color: theme.textMuted }]}>APPEARANCE</Text>
-
-              <View
-                style={[
-                  styles.settingRow,
-                  { backgroundColor: theme.card, borderColor: theme.cardBorder },
-                ]}
-              >
-                <View style={[styles.settingIcon, { backgroundColor: primaryColor + '20' }]}>
-                  <Ionicons name="moon" size={20} color={primaryColor} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.settingTitle, { color: theme.text }]}>Dark Mode</Text>
-                  <Text style={[styles.settingSub, { color: theme.textMuted }]}>
-                    {isDark ? 'Currently on' : 'Currently off'}
-                  </Text>
-                </View>
-                <Switch
-                  value={isDark}
-                  onValueChange={setIsDark}
-                  trackColor={{ false: '#d1d5db', true: primaryColor + '80' }}
-                  thumbColor={isDark ? primaryColor : '#f4f3f4'}
-                />
-              </View>
-
-              <View
-                style={[
-                  styles.colorCard,
-                  { backgroundColor: theme.card, borderColor: theme.cardBorder },
-                ]}
-              >
-                <View style={styles.colorHeader}>
-                  <View style={[styles.settingIcon, { backgroundColor: primaryColor + '20' }]}>
-                    <Ionicons name="color-palette" size={20} color={primaryColor} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.settingTitle, { color: theme.text }]}>Theme Color</Text>
-                    <Text style={[styles.settingSub, { color: theme.textMuted }]}>
-                      Pick your accent color
-                    </Text>
-                  </View>
-                </View>
-                <View style={styles.colorGrid}>
-                  {ACCENT_PRESETS.map(preset => {
-                    const selected = primaryColor === preset.value;
-                    return (
-                      <TouchableOpacity
-                        key={preset.value}
-                        style={styles.colorOption}
-                        onPress={() => setPrimaryColor(preset.value)}
-                        activeOpacity={0.7}
-                      >
-                        <View
-                          style={[
-                            styles.colorSwatch,
-                            { backgroundColor: preset.value },
-                            selected && { borderWidth: 3, borderColor: theme.text },
-                          ]}
-                        >
-                          {selected && (
-                            <Ionicons name="checkmark" size={20} color={colors.white} />
-                          )}
-                        </View>
-                        <Text
-                          style={[
-                            styles.colorName,
-                            { color: selected ? theme.text : theme.textMuted },
-                          ]}
-                        >
-                          {preset.name}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </View>
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
-    </>
+      </View>
+    </Modal>
   );
 }
 
@@ -318,113 +269,77 @@ const styles = StyleSheet.create({
   backdrop: {
     position: 'absolute',
     top: 0, left: 0, right: 0, bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.45)',
+    backgroundColor: 'rgba(0,0,0,0.5)',
   },
   panel: {
     width: SIDEBAR_WIDTH,
     height: '100%',
-    paddingTop: 60,
+    backgroundColor: THEME.white,
     paddingBottom: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 4, height: 0 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 8,
   },
-  header: {
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.lg,
-    borderBottomWidth: 1,
-    alignItems: 'flex-start',
+  topSpacer: {
+    paddingTop: 40,
   },
-  avatar: {
-    width: 60, height: 60, borderRadius: 30,
-    alignItems: 'center', justifyContent: 'center',
-    marginBottom: spacing.md,
-  },
-  avatarText: { color: colors.white, fontSize: 22, fontWeight: '700' },
-  name: { fontSize: typography.sizes.md, fontWeight: '700' },
-  info: { fontSize: typography.sizes.xs, marginTop: 2 },
-
   nav: { flex: 1, paddingTop: spacing.md },
+  
+  sectionTitle: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: THEME.gray,
+    letterSpacing: 1,
+    marginTop: 16,
+    marginBottom: 6,
+    paddingHorizontal: spacing.lg,
+  },
+
   navItem: {
     flexDirection: 'row', alignItems: 'center',
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.md,
     marginHorizontal: spacing.sm,
-    borderRadius: 12,
-    marginBottom: 6,
+    borderRadius: 10,
+    marginBottom: 4,
   },
+  navItemActive: { backgroundColor: THEME.royalBlue },
   navIcon: {
     width: 38, height: 38, borderRadius: 10,
     alignItems: 'center', justifyContent: 'center',
     marginRight: spacing.md,
+    backgroundColor: THEME.royalBlueSoft,
   },
-  navLabel: { flex: 1, fontSize: typography.sizes.sm },
-  activeDot: { width: 8, height: 8, borderRadius: 4 },
+  navIconActive: { backgroundColor: 'rgba(255,255,255,0.2)' },
+  navLabel: { flex: 1, fontSize: typography.sizes.sm, color: THEME.black, fontWeight: '500' },
+  navLabelActive: { color: THEME.white, fontWeight: '700' },
+  activeDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: THEME.yellow },
 
-  footer: {
-    borderTopWidth: 1,
-    paddingTop: spacing.md,
+  bottomSection: {
+    paddingTop: spacing.sm,
     paddingHorizontal: spacing.sm,
-    gap: 4,
   },
-  footerBtn: {
-    flexDirection: 'row', alignItems: 'center',
-    gap: spacing.md,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-    borderRadius: 10,
+  divider: {
+    height: 1,
+    backgroundColor: THEME.lightGray,
+    marginVertical: spacing.md,
+    marginHorizontal: spacing.md,
   },
-  footerText: { fontSize: typography.sizes.sm, fontWeight: '500' },
 
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'flex-end',
-  },
-  settingsSheet: {
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: spacing.lg,
-    maxHeight: '85%',
-  },
-  settingsHeader: {
+  profileHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: spacing.lg,
+    gap: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.sm,
   },
-  settingsTitle: { fontSize: typography.sizes.xl, fontWeight: '700' },
-  sectionLabel: {
-    fontSize: typography.sizes.xs,
-    fontWeight: '600',
-    letterSpacing: 1,
-    marginBottom: spacing.sm,
-    marginLeft: spacing.xs,
+  headerTextCol: {
+    flex: 1,
+    justifyContent: 'center',
   },
-  settingRow: {
-    flexDirection: 'row', alignItems: 'center',
-    borderRadius: 14,
-    padding: spacing.md,
-    marginBottom: spacing.sm,
-    borderWidth: 1,
+  avatar: {
+    width: 50, height: 50, borderRadius: 25,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: THEME.royalBlue,
   },
-  settingIcon: {
-    width: 40, height: 40, borderRadius: 10,
-    justifyContent: 'center', alignItems: 'center',
-    marginRight: spacing.md,
-  },
-  settingTitle: { fontSize: typography.sizes.sm, fontWeight: '600' },
-  settingSub: { fontSize: typography.sizes.xs, marginTop: 1 },
-  colorCard: { borderRadius: 14, padding: spacing.md, borderWidth: 1 },
-  colorHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.md },
-  colorGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
-  colorOption: { width: '23%', alignItems: 'center', marginBottom: spacing.md },
-  colorSwatch: {
-    width: 48, height: 48, borderRadius: 24,
-    justifyContent: 'center', alignItems: 'center',
-    marginBottom: spacing.xs,
-  },
-  colorName: { fontSize: typography.sizes.xs },
+  avatarText: { color: THEME.white, fontSize: 18, fontWeight: '700' },
+  name: { fontSize: typography.sizes.md, fontWeight: '700', color: THEME.black },
+  info: { fontSize: typography.sizes.xs, marginTop: 2, color: THEME.gray },
 });

@@ -16,16 +16,15 @@ import {
   View,
 } from 'react-native';
 
-// ===== Neumorphic palette =====
-const NEU = {
-  bg: '#E8EDF2',
-  bgDark: '#D1D9E6',
-  lightShadow: '#FFFFFF',
-  darkShadow: '#A3B1C6',
-  text: '#2E3A4D',
-  textMuted: '#7A8699',
-  textFaint: '#A0ACBE',
-  accent: '#4C6FFF',
+const THEME = {
+  royalBlue: '#1E3A8A',
+  yellow: '#F5C518',
+  white: '#FFFFFF',
+  offWhite: '#F5F7FA',
+  lightGray: '#E5EAF2',
+  gray: '#8A94A6',
+  darkGray: '#4A5568',
+  black: '#1A202C',
   danger: '#EF4444',
 };
 
@@ -72,9 +71,8 @@ export default function ForgotPassword() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.card}>
-          {/* Inset icon circle */}
           <View style={styles.iconContainer}>
-            <Ionicons name="key-outline" size={34} color={NEU.accent} />
+            <Ionicons name="key" size={34} color={THEME.royalBlue} />
           </View>
 
           <Text style={styles.title}>Forgot Password?</Text>
@@ -85,16 +83,11 @@ export default function ForgotPassword() {
           <View style={styles.inputGroup}>
             <Text style={styles.label}>Email Address</Text>
             <View style={styles.inputWrapper}>
-              <Ionicons
-                name="mail-outline"
-                size={18}
-                color={NEU.textMuted}
-                style={styles.inputIcon}
-              />
+              <Ionicons name="mail-outline" size={18} color={THEME.gray} />
               <TextInput
                 style={styles.input}
-                placeholder="Enter your registered email address"
-                placeholderTextColor={NEU.textFaint}
+                placeholder="Enter your registered email"
+                placeholderTextColor={THEME.gray}
                 value={email}
                 onChangeText={setEmail}
                 autoCapitalize="none"
@@ -108,13 +101,13 @@ export default function ForgotPassword() {
             style={styles.sendButton}
             onPress={handleSendReset}
             disabled={loading || sent}
-            activeOpacity={0.8}
+            activeOpacity={0.85}
           >
             {loading ? (
-              <ActivityIndicator color={NEU.accent} />
+              <ActivityIndicator color={THEME.white} />
             ) : (
               <>
-                <Ionicons name="paper-plane-outline" size={18} color={NEU.accent} />
+                <Ionicons name="paper-plane-outline" size={18} color={THEME.white} />
                 <Text style={styles.sendButtonText}>
                   {sent ? 'Reset Code Sent' : 'Send Reset Code'}
                 </Text>
@@ -127,21 +120,21 @@ export default function ForgotPassword() {
             onPress={() => router.push('/(auth)/login')}
             activeOpacity={0.7}
           >
-            <Ionicons name="arrow-back" size={16} color={NEU.accent} />
+            <Ionicons name="arrow-back" size={16} color={THEME.royalBlue} />
             <Text style={styles.backLinkText}>Back to Login</Text>
           </TouchableOpacity>
 
           <View style={styles.features}>
             <View style={styles.feature}>
-              <Ionicons name="time-outline" size={14} color={NEU.textMuted} />
+              <Ionicons name="time-outline" size={14} color={THEME.gray} />
               <Text style={styles.featureText}>Valid 1 hour</Text>
             </View>
             <View style={styles.feature}>
-              <Ionicons name="shield-checkmark-outline" size={14} color={NEU.textMuted} />
+              <Ionicons name="shield-checkmark-outline" size={14} color={THEME.gray} />
               <Text style={styles.featureText}>Secure</Text>
             </View>
             <View style={styles.feature}>
-              <Ionicons name="mail-outline" size={14} color={NEU.textMuted} />
+              <Ionicons name="mail-outline" size={14} color={THEME.gray} />
               <Text style={styles.featureText}>Check inbox</Text>
             </View>
           </View>
@@ -154,7 +147,7 @@ export default function ForgotPassword() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: NEU.bg,
+    backgroundColor: THEME.royalBlue,
   },
   scrollContent: {
     flexGrow: 1,
@@ -162,20 +155,10 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
   },
   card: {
-    backgroundColor: NEU.bg,
-    borderRadius: 28,
+    backgroundColor: THEME.white,
+    borderRadius: 20,
     padding: spacing.xl,
     alignItems: 'center',
-    // large raised neumorphic panel
-    shadowColor: NEU.darkShadow,
-    shadowOffset: { width: 8, height: 8 },
-    shadowOpacity: 0.6,
-    shadowRadius: 18,
-    elevation: 8,
-    borderTopWidth: 1,
-    borderLeftWidth: 1,
-    borderTopColor: NEU.lightShadow,
-    borderLeftColor: NEU.lightShadow,
   },
   iconContainer: {
     width: 80,
@@ -184,28 +167,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: spacing.lg,
-    backgroundColor: NEU.bg,
-    // inset circle
-    shadowColor: NEU.darkShadow,
-    shadowOffset: { width: 3, height: 3 },
-    shadowOpacity: 0.5,
-    shadowRadius: 6,
-    elevation: 2,
-    borderTopWidth: 1,
-    borderLeftWidth: 1,
-    borderTopColor: 'rgba(163,177,198,0.4)',
-    borderLeftColor: 'rgba(163,177,198,0.4)',
+    backgroundColor: '#EEF2FF',
   },
   title: {
     fontSize: typography.sizes.xxl,
     fontWeight: '800',
-    color: NEU.text,
+    color: THEME.black,
     marginBottom: spacing.xs,
-    letterSpacing: -0.5,
   },
   subtitle: {
     fontSize: typography.sizes.sm,
-    color: NEU.textMuted,
+    color: THEME.gray,
     textAlign: 'center',
     marginBottom: spacing.lg,
     lineHeight: 20,
@@ -219,64 +191,38 @@ const styles = StyleSheet.create({
   label: {
     fontSize: typography.sizes.sm,
     fontWeight: '600',
-    color: NEU.text,
-    paddingLeft: 4,
+    color: THEME.black,
   },
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 14,
+    borderRadius: 12,
     paddingHorizontal: spacing.md,
-    backgroundColor: NEU.bg,
-    // inset field
-    shadowColor: NEU.darkShadow,
-    shadowOffset: { width: 3, height: 3 },
-    shadowOpacity: 0.55,
-    shadowRadius: 6,
-    elevation: 2,
-    borderTopWidth: 1,
-    borderLeftWidth: 1,
-    borderTopColor: 'rgba(163,177,198,0.5)',
-    borderLeftColor: 'rgba(163,177,198,0.5)',
-    borderBottomWidth: 1,
-    borderRightWidth: 1,
-    borderBottomColor: NEU.lightShadow,
-    borderRightColor: NEU.lightShadow,
-  },
-  inputIcon: {
-    marginRight: spacing.sm,
+    backgroundColor: THEME.offWhite,
+    borderWidth: 1,
+    borderColor: THEME.lightGray,
+    gap: spacing.sm,
   },
   input: {
     flex: 1,
     paddingVertical: spacing.md,
     fontSize: typography.sizes.sm,
-    color: NEU.text,
+    color: THEME.black,
   },
   sendButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: NEU.bg,
+    backgroundColor: THEME.royalBlue,
     paddingVertical: spacing.md,
-    borderRadius: 16,
+    borderRadius: 12,
     gap: spacing.sm,
     width: '100%',
-    // raised neumorphic
-    shadowColor: NEU.darkShadow,
-    shadowOffset: { width: 6, height: 6 },
-    shadowOpacity: 0.6,
-    shadowRadius: 12,
-    elevation: 6,
-    borderTopWidth: 1,
-    borderLeftWidth: 1,
-    borderTopColor: NEU.lightShadow,
-    borderLeftColor: NEU.lightShadow,
   },
   sendButtonText: {
-    color: NEU.accent,
+    color: THEME.white,
     fontSize: typography.sizes.md,
     fontWeight: '800',
-    letterSpacing: 0.3,
   },
   backLink: {
     flexDirection: 'row',
@@ -287,7 +233,7 @@ const styles = StyleSheet.create({
   },
   backLinkText: {
     fontSize: typography.sizes.sm,
-    color: NEU.accent,
+    color: THEME.royalBlue,
     fontWeight: '700',
   },
   features: {
@@ -297,7 +243,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.lg,
     paddingTop: spacing.lg,
     borderTopWidth: 1,
-    borderTopColor: NEU.bgDark,
+    borderTopColor: THEME.lightGray,
   },
   feature: {
     flexDirection: 'row',
@@ -306,7 +252,7 @@ const styles = StyleSheet.create({
   },
   featureText: {
     fontSize: 10,
-    color: NEU.textMuted,
+    color: THEME.gray,
     fontWeight: '500',
   },
 });

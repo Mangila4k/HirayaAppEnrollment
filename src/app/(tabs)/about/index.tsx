@@ -1,58 +1,84 @@
 import { spacing, typography } from '@/styles';
 import { Ionicons } from '@expo/vector-icons';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  ImageBackground,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-// ===== Neumorphic palette =====
-const NEU = {
-  bg: '#E8EDF2',
-  bgDark: '#D1D9E6',
-  lightShadow: '#FFFFFF',
-  darkShadow: '#A3B1C6',
-  text: '#2E3A4D',
-  textMuted: '#7A8699',
-  textFaint: '#A0ACBE',
-  accent: '#4C6FFF',
+const MATATAG_BG = require('@assets/images/matatag-bg.jpg');
+
+const THEME = {
+  royalBlue: '#1E3A8A',
+  yellow: '#F5C518',
+  white: '#FFFFFF',
+  offWhite: '#F5F7FA',
+  lightGray: '#E5EAF2',
+  gray: '#8A94A6',
+  black: '#1A202C',
 };
 
 export default function AboutPage() {
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
-        <Text style={styles.title}>About HES</Text>
-        <Text style={styles.subtitle}>Learn more about our mission and vision.</Text>
-
-        <View style={styles.card}>
-          <View style={styles.iconContainer}>
-            <Ionicons name="radio-button-on-outline" size={26} color={NEU.accent} />
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.contentContainer}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* ===== HERO BANNER ===== */}
+        <ImageBackground
+          source={MATATAG_BG}
+          style={styles.heroBanner}
+          imageStyle={styles.heroImage}
+          resizeMode="cover"
+        >
+          <View style={styles.heroOverlay} />
+          <View style={styles.heroContent}>
+            <Text style={styles.heroTitle}>About PLSNHS</Text>
+            <Text style={styles.heroSubtitle}>
+              Learn more about our mission and vision.
+            </Text>
           </View>
-          <Text style={styles.cardTitle}>Our Mission</Text>
-          <Text style={styles.cardDesc}>
-            To provide accessible, efficient, and quality enrollment management services
-            for students and stakeholders of Hiraya Enrollment System.
-          </Text>
-        </View>
+        </ImageBackground>
 
-        <View style={styles.card}>
-          <View style={styles.iconContainer}>
-            <Ionicons name="eye-outline" size={26} color={NEU.accent} />
+        {/* ===== CARDS ===== */}
+        <View style={styles.body}>
+          <View style={styles.card}>
+            <View style={styles.iconContainer}>
+              <Ionicons name="radio-button-on" size={26} color={THEME.royalBlue} />
+            </View>
+            <Text style={styles.cardTitle}>Our Mission</Text>
+            <Text style={styles.cardDesc}>
+              To provide accessible, efficient, and quality enrollment management services
+              for students and stakeholders of Placido L. Señor NHS Enrollment System.
+            </Text>
           </View>
-          <Text style={styles.cardTitle}>Our Vision</Text>
-          <Text style={styles.cardDesc}>
-            To be the leading enrollment management system in the region, setting the
-            standard for innovation and excellence in education administration.
-          </Text>
-        </View>
 
-        <View style={styles.card}>
-          <View style={styles.iconContainer}>
-            <Ionicons name="heart-outline" size={26} color={NEU.accent} />
+          <View style={styles.card}>
+            <View style={styles.iconContainer}>
+              <Ionicons name="eye" size={26} color={THEME.royalBlue} />
+            </View>
+            <Text style={styles.cardTitle}>Our Vision</Text>
+            <Text style={styles.cardDesc}>
+              To be the leading enrollment management system in the region, setting the
+              standard for innovation and excellence in education administration.
+            </Text>
           </View>
-          <Text style={styles.cardTitle}>Our Values</Text>
-          <Text style={styles.cardDesc}>
-            Integrity, Innovation, Service Excellence, and Student-Centered Approach
-            in everything we do.
-          </Text>
+
+          <View style={styles.card}>
+            <View style={styles.iconContainer}>
+              <Ionicons name="heart" size={26} color={THEME.royalBlue} />
+            </View>
+            <Text style={styles.cardTitle}>Our Values</Text>
+            <Text style={styles.cardDesc}>
+              Integrity, Innovation, Service Excellence, and Student-Centered Approach
+              in everything we do.
+            </Text>
+          </View>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -60,43 +86,61 @@ export default function AboutPage() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: NEU.bg,
+  safeArea: { flex: 1, backgroundColor: THEME.white },
+  container: { flex: 1 },
+  contentContainer: { paddingBottom: spacing.xl },
+
+  // ===== Hero banner =====
+  heroBanner: {
+    width: '100%',
+    height: 220,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  container: {
-    flex: 1,
-    padding: spacing.lg,
+  heroImage: { width: '100%', height: '100%', resizeMode: 'cover' },
+  heroOverlay: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: 'rgba(30,58,138,0.65)',
   },
-  title: {
+  heroContent: {
+    padding: spacing.xl,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 2,
+    width: '100%',
+    maxWidth: 720,
+    alignSelf: 'center',
+  },
+  heroTitle: {
     fontSize: typography.sizes.xxl,
     fontWeight: '800',
-    color: NEU.text,
-    marginTop: spacing.md,
-    letterSpacing: -0.5,
+    color: THEME.white,
+    textAlign: 'center',
+    textShadowColor: 'rgba(0,0,0,0.4)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 6,
   },
-  subtitle: {
+  heroSubtitle: {
     fontSize: typography.sizes.md,
-    color: NEU.textMuted,
-    marginBottom: spacing.lg,
-    lineHeight: 20,
+    color: THEME.yellow,
+    textAlign: 'center',
+    marginTop: spacing.xs,
+    fontWeight: '600',
+    textShadowColor: 'rgba(0,0,0,0.3)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
+
+  // ===== Body =====
+  body: { padding: spacing.lg },
   card: {
-    backgroundColor: NEU.bg,
-    borderRadius: 20,
+    backgroundColor: THEME.offWhite,
+    borderRadius: 16,
     padding: spacing.lg,
     marginBottom: spacing.md,
     alignItems: 'center',
-    // large raised neumorphic panel
-    shadowColor: NEU.darkShadow,
-    shadowOffset: { width: 6, height: 6 },
-    shadowOpacity: 0.6,
-    shadowRadius: 12,
-    elevation: 6,
-    borderTopWidth: 1,
-    borderLeftWidth: 1,
-    borderTopColor: NEU.lightShadow,
-    borderLeftColor: NEU.lightShadow,
+    borderWidth: 1,
+    borderColor: THEME.lightGray,
   },
   iconContainer: {
     width: 56,
@@ -105,28 +149,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: spacing.sm,
-    backgroundColor: NEU.bg,
-    // inset circle
-    shadowColor: NEU.darkShadow,
-    shadowOffset: { width: 2, height: 2 },
-    shadowOpacity: 0.5,
-    shadowRadius: 4,
-    elevation: 2,
-    borderTopWidth: 1,
-    borderLeftWidth: 1,
-    borderTopColor: 'rgba(163,177,198,0.4)',
-    borderLeftColor: 'rgba(163,177,198,0.4)',
+    backgroundColor: '#EEF2FF',
   },
   cardTitle: {
     fontSize: typography.sizes.lg,
     fontWeight: '800',
-    color: NEU.text,
+    color: THEME.black,
     marginBottom: spacing.xs,
-    letterSpacing: -0.3,
   },
   cardDesc: {
     fontSize: typography.sizes.sm,
-    color: NEU.textMuted,
+    color: THEME.gray,
     textAlign: 'center',
     lineHeight: 22,
   },

@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "Hiraya Enrollment System",
-    "slug": "hiraya-enrollment",
+    "name": "Placido L. Señor NHS",
+    "slug": "plsnhs-enrollment",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/logo.jpg",
-    "scheme": "hiraya",
+    "icon": "./assets/images/plsnhslogo.jpg",
+    "scheme": "plsnhs",
     "userInterfaceStyle": "light",
     "assetBundlePatterns": [
       "**/*"
@@ -14,13 +14,13 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.plsnhs.enrollment",
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "Hiraya Enrollment System uses your location to verify you are within the school premises when recording attendance.",
+        "NSLocationWhenInUseUsageDescription": "Placido L. Señor NHS Enrollment System uses your location to verify you are within the school premises when recording attendance.",
         "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/logo.jpg",
+        "foregroundImage": "./assets/images/plsnhslogo.jpg",
         "backgroundColor": "#0B2A4A"
       },
       "package": "com.plsnhs.enrollment",
@@ -30,7 +30,7 @@
       ]
     },
     "web": {
-      "favicon": "./assets/images/logo.jpg"
+      "favicon": "./assets/images/plsnhslogo.jpg"
     },
     "plugins": [
       "expo-router",
@@ -38,8 +38,8 @@
       [
         "expo-location",
         {
-          "locationAlwaysAndWhenInUsePermission": "Allow Hiraya Enrollment System to use your location to verify attendance.",
-          "locationWhenInUsePermission": "Allow Hiraya Enrollment System to use your location to verify attendance.",
+          "locationAlwaysAndWhenInUsePermission": "Allow Placido L. Señor NHS Enrollment System to use your location to verify attendance.",
+          "locationWhenInUsePermission": "Allow Placido L. Señor NHS Enrollment System to use your location to verify attendance.",
           "isAndroidBackgroundLocationEnabled": false,
           "isAndroidForegroundServiceEnabled": false,
           "isIosBackgroundLocationEnabled": false
@@ -47,7 +47,8 @@
       ],
       "expo-image",
       "expo-splash-screen",
-      "expo-web-browser"
+      "expo-web-browser",
+      "@react-native-community/datetimepicker"
     ],
     "experiments": {
       "typedRoutes": true

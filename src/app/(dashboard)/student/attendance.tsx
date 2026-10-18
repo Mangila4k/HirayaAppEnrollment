@@ -1,224 +1,273 @@
-import { useTheme } from '@/app/_context/themecontext';
+import StudentSidebar from '@/components/StudentSidebar';
 import { supabase } from '@/lib/supabase/client';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-type RawAttendance = {
+// ===== THEME =====
+const THEME = {
+  royalBlue: '#1E3A8A',
+  royalBlueDark: '#152C6B',
+  yellow: '#F5C518',
+  yellowLight: '#FFD84D',
+  white: '#FFFFFF',
+  offWhite: '#F0F4FA',
+  offWhiteDark: '#D6E0F0',
+  lightShadow: '#FFFFFF',
+  darkShadow: '#B8C5DB',
+  gray: '#8A94A6',
+  darkGray: '#4A5568',
+  black: '#1A202C',
+  success: '#22C55E',
+  danger: '#EF4444',
+  warning: '#F59E0B',
+  info: '#3B82F6',
+  excused: '#8B5CF6',
+};
+
+type AttendanceRecord = {
   id: string;
   date: string;
-  status: 'present' | 'absent' | 'late' | 'excused';
-  remarks: string;
-  subject_id: string | null;
+  time_in?: string;
+  time_out?: string;
+  status: 'Present' | 'Late' | 'Absent' | 'Excused';
+  remarks?: string;
+  teacher_name?: string;
 };
 
-type SubjectGroup = {
-  subject_id: string;
-  subject_name: string;
-  subject_code: string;
-  subject_type: string;
-  present: number;
-  absent: number;
-  late: number;
-  excused: number;
-  total: number;
-  attendanceRate: number;
-  records: RawAttendance[];
-};
-
-const NEU = {
-  bg: '#E8EDF2',
-  bgDark: '#D1D9E6',
-  lightShadow: '#FFFFFF',
-  darkShadow: '#A3B1C6',
-  text: '#2E3A4D',
-  textMuted: '#7A8699',
-  textFaint: '#A0ACBE',
+type StudentInfo = {
+  lrn: string;
+  grade_level: string;
+  strand: string;
+  section_name: string;
+  school_year: string;
+  enrollment_status: string;
 };
 
 export default function StudentAttendance() {
   const router = useRouter();
-  const { primaryColor, theme } = useTheme();
+
   const [loading, setLoading] = useState(true);
-  const [groups, setGroups] = useState<SubjectGroup[]>([]);
-  const [expandedSubject, setExpandedSubject] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  
+  const [studentInfo, setStudentInfo] = useState<StudentInfo | null>(null);
+  const [records, setRecords] = useState<AttendanceRecord[]>([]);
+  
+  // Filters
+  const [monthFilter, setMonthFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
-    loadAttendance();
+    loadAttendanceData();
   }, []);
 
-  const loadAttendance = async () => {
+  const loadAttendanceData = async () => {
     setLoading(true);
     try {
       const email = await AsyncStorage.getItem('userEmail');
-      if (!email) {
-        Alert.alert('Not Logged In', 'Please log in again.');
-        setLoading(false);
-        return;
-      }
+      if (!email) throw new Error('No user email found in session.');
 
+      // 1. Fetch Student Record
+      let studentData: any = null;
+      
+      // Try finding by email in the users table first
       const { data: userData } = await supabase
-        .from('users')
-        .select('id, email, role')
-        .eq('email', email)
-        .maybeSingle();
+        .from('users').select('student_id').eq('email', email).maybeSingle();
 
-      if (!userData) {
-        Alert.alert('Error', 'User account not found.');
-        setLoading(false);
-        return;
+      if (userData?.student_id) {
+        const { data } = await supabase.from('students').select('*').eq('id', userData.student_id).maybeSingle();
+        studentData = data;
+      }
+      
+      // Fallback: find by email directly in students table
+      if (!studentData) {
+        const { data } = await supabase.from('students').select('*').eq('email', email).maybeSingle();
+        studentData = data;
       }
 
-      const { data: studentRows } = await supabase
-        .from('students')
-        .select('id, first_name, last_name, email')
-        .eq('email', email)
+      if (!studentData) throw new Error('Student record not found.');
+
+      // 2. Fetch Enrollment Info (for School Year and Grade)
+      let enrollment: any = null;
+      const { data: eRows } = await supabase
+        .from('enrollments').select('*')
+        .or(`email.eq.${email},student_id.eq.${studentData.id}`)
+        .order('created_at', { ascending: false })
         .limit(1);
+        
+      if (eRows && eRows.length > 0) enrollment = eRows[0];
 
-      if (!studentRows || studentRows.length === 0) {
-        Alert.alert('Error', 'Student profile not found.');
-        setLoading(false);
-        return;
+      // 3. Fetch Section Name
+      let secName = 'Unassigned';
+      if (studentData.section_id) {
+        const { data: sec } = await supabase
+          .from('sections')
+          .select('name')
+          .eq('id', studentData.section_id)
+          .maybeSingle();
+        if (sec) secName = sec.name;
       }
 
-      const studentData = studentRows[0];
+      setStudentInfo({
+        lrn: studentData.lrn || 'N/A',
+        grade_level: enrollment?.grade_level || studentData.grade_level || 'Grade 11',
+        strand: enrollment?.strand || studentData.strand || 'N/A',
+        section_name: secName,
+        school_year: enrollment?.school_year || '2025-2026',
+        enrollment_status: studentData.documents_status === 'complete' ? 'Enrolled' : 'Pending',
+      });
 
-      const { data: attendanceData } = await supabase
+      // 4. Fetch Attendance Records (Matching the Teacher Web App)
+      const { data: attData, error: attError } = await supabase
         .from('attendance')
-        .select('id, date, status, remarks, subject_id, student_id')
+        .select('*')
         .eq('student_id', studentData.id)
         .order('date', { ascending: false });
 
-      if (!attendanceData || attendanceData.length === 0) {
-        setGroups([]);
-        setLoading(false);
-        return;
+      if (attError) {
+        console.warn('Attendance fetch error:', attError.message);
       }
 
-      const subjectIds = [
-        ...new Set(attendanceData.map((a: any) => a.subject_id).filter(Boolean)),
-      ];
-
-      const subjectMap: Record<string, any> = {};
-      if (subjectIds.length > 0) {
-        const { data: subjectsData } = await supabase
-          .from('subjects')
-          .select('id, name, code, subject_type')
-          .in('id', subjectIds);
-        (subjectsData || []).forEach((s: any) => {
-          subjectMap[s.id] = s;
-        });
+      if (attData) {
+        // Normalize status capitalization
+        const normalized = attData.map((r: any) => ({
+          id: r.id,
+          date: r.date,
+          time_in: r.time_in || '—',
+          time_out: r.time_out || '—',
+          status: (r.status || 'Present').charAt(0).toUpperCase() + (r.status || 'Present').slice(1).toLowerCase(),
+          remarks: r.remarks || '',
+          teacher_name: r.teacher_name || null
+        }));
+        
+        setRecords(normalized);
+      } else {
+        setRecords([]);
       }
 
-      const grouped: Record<string, SubjectGroup> = {};
-
-      attendanceData.forEach((a: any) => {
-        const subjectId = a.subject_id || 'no_subject';
-        const subject = subjectMap[subjectId];
-
-        if (!grouped[subjectId]) {
-          grouped[subjectId] = {
-            subject_id: subjectId,
-            subject_name: subject?.name || 'General Attendance',
-            subject_code: subject?.code || '',
-            subject_type: subject?.subject_type || '',
-            present: 0, absent: 0, late: 0, excused: 0,
-            total: 0, attendanceRate: 0, records: [],
-          };
-        }
-
-        const normalizedStatus = String(a.status || '')
-          .trim()
-          .toLowerCase() as 'present' | 'absent' | 'late' | 'excused';
-
-        grouped[subjectId].records.push({
-          id: a.id,
-          date: a.date,
-          status: normalizedStatus,
-          remarks: a.remarks || '',
-          subject_id: a.subject_id,
-        });
-        grouped[subjectId].total++;
-
-        if (normalizedStatus === 'present') grouped[subjectId].present++;
-        else if (normalizedStatus === 'absent') grouped[subjectId].absent++;
-        else if (normalizedStatus === 'late') grouped[subjectId].late++;
-        else if (normalizedStatus === 'excused') grouped[subjectId].excused++;
-      });
-
-      const result: SubjectGroup[] = Object.values(grouped).map((g) => ({
-        ...g,
-        attendanceRate: g.total > 0 ? Math.round(((g.present + g.late) / g.total) * 100) : 0,
-      }));
-
-      result.sort((a, b) => {
-        if (a.subject_id === 'no_subject') return 1;
-        if (b.subject_id === 'no_subject') return -1;
-        return a.subject_name.localeCompare(b.subject_name);
-      });
-
-      setGroups(result);
     } catch (e: any) {
-      console.error('Error loading attendance:', e);
-      Alert.alert('Error', e?.message || 'Something went wrong.');
+      console.error(e);
+      Alert.alert('Error', e?.message || 'Failed to load attendance');
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
-  const toggleSubject = (subjectId: string) => {
-    setExpandedSubject((prev) => (prev === subjectId ? null : subjectId));
+  const onRefresh = () => {
+    setRefreshing(true);
+    loadAttendanceData();
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'present': return '#22C55E';
-      case 'absent': return '#EF4444';
-      case 'late': return '#F59E0B';
-      case 'excused': return '#3B82F6';
-      default: return NEU.textMuted;
+  const formatDate = (dateStr: string) => {
+    if (!dateStr) return 'N/A';
+    try {
+      const d = new Date(dateStr + 'T00:00:00');
+      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    } catch { return dateStr; }
+  };
+
+  const getDayOfWeek = (dateStr: string) => {
+    if (!dateStr) return '';
+    try {
+      const d = new Date(dateStr + 'T00:00:00');
+      return d.toLocaleDateString('en-US', { weekday: 'long' });
+    } catch { return ''; }
+  };
+
+  // ===== STATS CALCULATION =====
+  const stats = useMemo(() => {
+    const total = records.length;
+    let present = 0, late = 0, absent = 0, excused = 0;
+
+    records.forEach(r => {
+      const st = (r.status || '').toLowerCase();
+      if (st === 'present') present++;
+      else if (st === 'late') late++;
+      else if (st === 'absent') absent++;
+      else if (st === 'excused') excused++;
+    });
+
+    // Standard Attendance Rate: (Present + Late + Excused) / Total Days
+    const attended = present + late + excused;
+    const rate = total > 0 ? (attended / total) * 100 : 0;
+
+    return { total, present, late, absent, excused, attended, rate };
+  }, [records]);
+
+  // ===== TODAY'S STATUS =====
+  const todayStatus = useMemo(() => {
+    const now = new Date();
+    const isWeekend = now.getDay() === 0 || now.getDay() === 6;
+    
+    if (isWeekend) {
+      return { label: 'Weekend (No Classes)', status: 'Weekend', remarks: 'No classes scheduled on weekends.', color: THEME.info };
     }
-  };
 
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'present': return 'checkmark-circle';
-      case 'absent': return 'close-circle';
-      case 'late': return 'time';
-      case 'excused': return 'information-circle';
-      default: return 'help-circle';
+    const todayStr = now.toISOString().split('T')[0];
+    const todayRec = records.find(r => r.date === todayStr);
+
+    if (!todayRec) {
+      return { label: 'Not Yet Recorded', status: 'Pending', remarks: 'Your teacher has not recorded attendance for today yet.', color: THEME.gray };
     }
-  };
 
-  const getStatusLabel = (status: string) => {
-    if (!status) return 'Unknown';
-    return status.charAt(0).toUpperCase() + status.slice(1);
-  };
+    return {
+      label: todayRec.status,
+      status: todayRec.status,
+      remarks: todayRec.remarks || 'Present in class.',
+      color: todayRec.status === 'Present' ? THEME.success : 
+             todayRec.status === 'Late' ? THEME.warning :
+             todayRec.status === 'Excused' ? THEME.excused : THEME.danger
+    };
+  }, [records]);
 
-  const getRateColor = (rate: number) => {
-    if (rate >= 95) return '#22C55E';
-    if (rate >= 85) return '#84CC16';
-    if (rate >= 75) return '#F59E0B';
-    return '#EF4444';
-  };
+  // ===== FILTERING =====
+  const filteredRecords = useMemo(() => {
+    const currentMonthIdx = new Date().getMonth();
+    
+    return records.filter(r => {
+      const d = new Date(r.date + 'T00:00:00');
+      const rMonth = isNaN(d.getTime()) ? -1 : d.getMonth();
+
+      // Month Filter
+      if (monthFilter === 'current' && rMonth !== currentMonthIdx) return false;
+      if (monthFilter !== 'all' && monthFilter !== 'current' && rMonth !== parseInt(monthFilter)) return false;
+
+      // Status Filter
+      if (statusFilter !== 'all' && (r.status || '').toLowerCase() !== statusFilter.toLowerCase()) return false;
+
+      // Search Filter
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const hay = `${formatDate(r.date)} ${getDayOfWeek(r.date)} ${r.status} ${r.remarks || ''}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+
+      return true;
+    });
+  }, [records, monthFilter, statusFilter, searchQuery]);
 
   if (loading) {
     return (
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.loadingContainer}>
           <View style={styles.loadingOrb}>
-            <ActivityIndicator size="small" color={primaryColor} />
+            <ActivityIndicator size="small" color={THEME.royalBlue} />
           </View>
         </View>
       </SafeAreaView>
@@ -226,273 +275,322 @@ export default function StudentAttendance() {
   }
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.background }]}>
+    <SafeAreaView style={styles.safeArea}>
       <ScrollView
         style={styles.container}
         contentContainerStyle={{ paddingBottom: 100 }}
         showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={THEME.royalBlue} />}
       >
+        {/* ===== HEADER ===== */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn}>
-            <Ionicons name="arrow-back" size={20} color={NEU.text} />
+          <TouchableOpacity onPress={() => setDrawerOpen(true)} style={styles.iconBtn}>
+            <Ionicons name="menu-outline" size={22} color={THEME.royalBlue} />
           </TouchableOpacity>
           <Text style={styles.title}>My Attendance</Text>
-          <TouchableOpacity onPress={loadAttendance} style={styles.iconBtn}>
-            <Ionicons name="refresh" size={18} color={NEU.text} />
+          <TouchableOpacity onPress={loadAttendanceData} style={styles.iconBtn}>
+            <Ionicons name="refresh" size={18} color={THEME.royalBlue} />
           </TouchableOpacity>
         </View>
 
-        <View style={styles.summaryCard}>
-          <View style={[styles.summaryIcon, { backgroundColor: primaryColor + '20' }]}>
-            <Ionicons name="calendar" size={20} color={primaryColor} />
+        {/* ===== ENROLLMENT INFO CARD ===== */}
+        {studentInfo && (
+          <View style={styles.infoCard}>
+            <View style={styles.infoHeader}>
+              <Ionicons name="school" size={20} color={THEME.royalBlue} />
+              <Text style={styles.infoTitle}>Current Enrollment</Text>
+            </View>
+            <View style={styles.infoGrid}>
+              <View style={styles.infoCol}>
+                <Text style={styles.infoLabel}>Grade</Text>
+                <Text style={styles.infoVal}>{studentInfo.grade_level}</Text>
+              </View>
+              <View style={styles.infoCol}>
+                <Text style={styles.infoLabel}>Strand</Text>
+                <Text style={styles.infoVal}>{studentInfo.strand}</Text>
+              </View>
+              <View style={styles.infoCol}>
+                <Text style={styles.infoLabel}>Section</Text>
+                <Text style={styles.infoVal}>{studentInfo.section_name}</Text>
+              </View>
+              <View style={styles.infoCol}>
+                <Text style={styles.infoLabel}>S.Y.</Text>
+                <Text style={styles.infoVal}>{studentInfo.school_year}</Text>
+              </View>
+            </View>
           </View>
-          <View style={{ flex: 1, marginLeft: 16 }}>
-            <Text style={styles.summaryLabel}>Total Subjects</Text>
-            <Text style={styles.summaryValue}>{groups.length}</Text>
+        )}
+
+        {/* ===== STATS GRID ===== */}
+        <View style={styles.statsGrid}>
+          {/* Attendance Rate */}
+          <View style={styles.statCard}>
+            <View style={styles.statHeader}>
+              <Text style={styles.statLabel}>RATE</Text>
+              <Ionicons name="pie-chart" size={16} color={THEME.success} />
+            </View>
+            <Text style={styles.statNum}>{stats.rate.toFixed(1)}%</Text>
+            <View style={styles.progressBarBg}>
+              <View style={[styles.progressBarFill, { width: `${Math.min(100, stats.rate)}%` }]} />
+            </View>
+            <Text style={styles.statSub}>{stats.attended}/{stats.total} Days</Text>
           </View>
-          <View style={{ alignItems: 'flex-end' }}>
-            <Text style={styles.summaryLabel}>Total Days</Text>
-            <Text style={styles.summaryValue}>
-              {groups.reduce((sum, g) => sum + g.total, 0)}
-            </Text>
+
+          {/* Present */}
+          <View style={styles.statCard}>
+            <View style={styles.statHeader}>
+              <Text style={styles.statLabel}>PRESENT</Text>
+              <Ionicons name="checkmark-circle" size={16} color={THEME.success} />
+            </View>
+            <Text style={[styles.statNum, { color: THEME.success }]}>{stats.present}</Text>
+            <Text style={styles.statSub}>On-time</Text>
+          </View>
+
+          {/* Late */}
+          <View style={styles.statCard}>
+            <View style={styles.statHeader}>
+              <Text style={styles.statLabel}>LATE</Text>
+              <Ionicons name="time" size={16} color={THEME.warning} />
+            </View>
+            <Text style={[styles.statNum, { color: THEME.warning }]}>{stats.late}</Text>
+            <Text style={styles.statSub}>Arrivals</Text>
+          </View>
+
+          {/* Absences / Excused */}
+          <View style={styles.statCard}>
+            <View style={styles.statHeader}>
+              <Text style={styles.statLabel}>ABSENT</Text>
+              <Ionicons name="close-circle" size={16} color={THEME.danger} />
+            </View>
+            <Text style={[styles.statNum, { color: THEME.danger }]}>{stats.absent + stats.excused}</Text>
+            <Text style={styles.statSub}>{stats.absent} A / {stats.excused} E</Text>
           </View>
         </View>
 
-        {groups.length > 0 ? (
-          groups.map((group) => {
-            const isExpanded = expandedSubject === group.subject_id;
-            const rateColor = getRateColor(group.attendanceRate);
+        {/* ===== TODAY'S STATUS CARD ===== */}
+        <View style={styles.todayCard}>
+          <View style={styles.todayHeader}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <View style={styles.todayIconWrap}>
+                <Ionicons name="calendar" size={20} color={THEME.royalBlue} />
+              </View>
+              <View>
+                <Text style={styles.todayTitle}>Today's Status</Text>
+                <Text style={styles.todaySub}>{new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}</Text>
+              </View>
+            </View>
+            <View style={[styles.todayBadge, { backgroundColor: todayStatus.color + '20' }]}>
+              <Text style={[styles.todayBadgeText, { color: todayStatus.color }]}>{todayStatus.status}</Text>
+            </View>
+          </View>
+          <View style={styles.todayBody}>
+            <Text style={styles.todayRemarksLabel}>Remarks / Notes:</Text>
+            <Text style={styles.todayRemarksText}>{todayStatus.remarks}</Text>
+          </View>
+        </View>
+
+        {/* ===== FILTERS ===== */}
+        <Text style={styles.sectionTitle}>Attendance Records</Text>
+        
+        <View style={styles.filterRow}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
+            {[
+              { key: 'all', label: 'All Months' },
+              { key: 'current', label: 'Current' },
+              { key: '0', label: 'Jan' }, { key: '1', label: 'Feb' }, { key: '2', label: 'Mar' },
+              { key: '3', label: 'Apr' }, { key: '4', label: 'May' }, { key: '5', label: 'Jun' },
+              { key: '6', label: 'Jul' }, { key: '7', label: 'Aug' }, { key: '8', label: 'Sep' },
+              { key: '9', label: 'Oct' }, { key: '10', label: 'Nov' }, { key: '11', label: 'Dec' },
+            ].map(m => (
+              <TouchableOpacity
+                key={m.key}
+                style={[styles.filterChip, monthFilter === m.key && styles.filterChipActive]}
+                onPress={() => setMonthFilter(m.key)}
+              >
+                <Text style={[styles.filterChipText, monthFilter === m.key && styles.filterChipTextActive]}>
+                  {m.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+
+        <View style={styles.filterRow}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
+            {['all', 'Present', 'Late', 'Absent', 'Excused'].map(s => (
+              <TouchableOpacity
+                key={s}
+                style={[styles.filterChip, statusFilter === s && styles.filterChipActive]}
+                onPress={() => setStatusFilter(s)}
+              >
+                <Text style={[styles.filterChipText, statusFilter === s && styles.filterChipTextActive]}>
+                  {s === 'all' ? 'All Statuses' : s}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+
+        <View style={styles.searchBox}>
+          <Ionicons name="search" size={16} color={THEME.gray} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search date, day, or remarks..."
+            placeholderTextColor={THEME.gray}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+          />
+        </View>
+
+        {/* ===== RECORDS LIST ===== */}
+        {filteredRecords.length === 0 ? (
+          <View style={styles.emptyContainer}>
+            <Ionicons name="calendar-outline" size={44} color={THEME.gray} />
+            <Text style={styles.emptyText}>No Records Found</Text>
+            <Text style={styles.emptySub}>No attendance logs match your current filters.</Text>
+          </View>
+        ) : (
+          filteredRecords.map((rec, index) => {
+            const st = (rec.status || '').toLowerCase();
+            const color = st === 'present' ? THEME.success : (st === 'late' ? THEME.warning : (st === 'excused' ? THEME.excused : THEME.danger));
+            const icon = st === 'present' ? 'checkmark-circle' : (st === 'late' ? 'time' : (st === 'excused' ? 'medical' : 'close-circle'));
 
             return (
-              <View key={group.subject_id} style={styles.subjectGroup}>
-                <TouchableOpacity
-                  style={styles.subjectHeader}
-                  onPress={() => toggleSubject(group.subject_id)}
-                  activeOpacity={0.85}
-                >
-                  <View style={[styles.subjectIcon, { backgroundColor: primaryColor + '20' }]}>
-                    <Ionicons name="book" size={18} color={primaryColor} />
+              <View key={rec.id || index} style={styles.recordCard}>
+                <View style={styles.recordLeft}>
+                  <View style={[styles.statusIconWrap, { backgroundColor: color + '20' }]}>
+                    <Ionicons name={icon as any} size={18} color={color} />
                   </View>
-
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.subjectName}>{group.subject_name}</Text>
-                    {group.subject_code ? (
-                      <Text style={styles.subjectCode}>
-                        {group.subject_code}
-                        {group.subject_type ? ` • ${group.subject_type}` : ''}
-                      </Text>
-                    ) : null}
-                  </View>
-
-                  <View style={[styles.rateBadge, { backgroundColor: rateColor + '20' }]}>
-                    <Text style={[styles.rateText, { color: rateColor }]}>
-                      {group.attendanceRate}%
-                    </Text>
-                  </View>
-
-                  <Ionicons
-                    name={isExpanded ? 'chevron-down' : 'chevron-forward'}
-                    size={18}
-                    color={NEU.textMuted}
-                  />
-                </TouchableOpacity>
-
-                <View style={styles.subjectStats}>
-                  <View style={styles.statItem}>
-                    <Text style={[styles.statValue, { color: '#22C55E' }]}>{group.present}</Text>
-                    <Text style={styles.statLabel}>Present</Text>
-                  </View>
-                  <View style={styles.statDivider} />
-                  <View style={styles.statItem}>
-                    <Text style={[styles.statValue, { color: '#EF4444' }]}>{group.absent}</Text>
-                    <Text style={styles.statLabel}>Absent</Text>
-                  </View>
-                  <View style={styles.statDivider} />
-                  <View style={styles.statItem}>
-                    <Text style={[styles.statValue, { color: '#F59E0B' }]}>{group.late}</Text>
-                    <Text style={styles.statLabel}>Late</Text>
-                  </View>
-                  <View style={styles.statDivider} />
-                  <View style={styles.statItem}>
-                    <Text style={[styles.statValue, { color: NEU.text }]}>{group.total}</Text>
-                    <Text style={styles.statLabel}>Total</Text>
+                    <Text style={styles.recordDate}>{formatDate(rec.date)}</Text>
+                    <Text style={styles.recordDay}>{getDayOfWeek(rec.date)}</Text>
                   </View>
                 </View>
-
-                {isExpanded ? (
-                  <View style={styles.recordsContainer}>
-                    {group.records.map((record) => (
-                      <View key={record.id} style={styles.recordItem}>
-                        <View
-                          style={[
-                            styles.recordIcon,
-                            { backgroundColor: getStatusColor(record.status) + '20' },
-                          ]}
-                        >
-                          <Ionicons
-                            name={getStatusIcon(record.status) as any}
-                            size={14}
-                            color={getStatusColor(record.status)}
-                          />
-                        </View>
-                        <View style={{ flex: 1 }}>
-                          <Text style={styles.recordDate}>
-                            {new Date(record.date).toLocaleDateString('en-US', {
-                              weekday: 'long', month: 'short', day: 'numeric', year: 'numeric',
-                            })}
-                          </Text>
-                          {record.remarks ? (
-                            <Text style={styles.recordRemarks}>{record.remarks}</Text>
-                          ) : null}
-                        </View>
-                        <View
-                          style={[
-                            styles.statusBadge,
-                            { backgroundColor: getStatusColor(record.status) + '20' },
-                          ]}
-                        >
-                          <Text
-                            style={[styles.statusText, { color: getStatusColor(record.status) }]}
-                          >
-                            {getStatusLabel(record.status)}
-                          </Text>
-                        </View>
-                      </View>
-                    ))}
+                <View style={styles.recordRight}>
+                  <View style={[styles.statusBadge, { backgroundColor: color + '20' }]}>
+                    <Text style={[styles.statusBadgeText, { color }]}>{rec.status}</Text>
                   </View>
-                ) : null}
+                  <Text style={styles.recordRemarks} numberOfLines={1}>{rec.remarks || '—'}</Text>
+                </View>
               </View>
             );
           })
-        ) : (
-          <View style={styles.emptyContainer}>
-            <Ionicons name="calendar-outline" size={44} color={NEU.textFaint} />
-            <Text style={styles.emptyText}>No attendance records yet</Text>
-            <Text style={styles.emptySubtext}>
-              Your attendance will appear here once teachers mark you present.
-            </Text>
-            <TouchableOpacity style={styles.retryButton} onPress={loadAttendance}>
-              <Ionicons name="refresh" size={16} color={primaryColor} />
-              <Text style={[styles.retryButtonText, { color: primaryColor }]}>Refresh</Text>
-            </TouchableOpacity>
-          </View>
         )}
       </ScrollView>
+
+      {/* ===== SIDEBAR ===== */}
+      <StudentSidebar visible={drawerOpen} onClose={() => setDrawerOpen(false)} />
     </SafeAreaView>
   );
 }
 
+// ==================================================
+// STYLES
+// ==================================================
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: NEU.bg },
+  safeArea: { flex: 1, backgroundColor: THEME.offWhite },
   container: { flex: 1, padding: 16 },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   loadingOrb: {
     width: 64, height: 64, borderRadius: 32,
     alignItems: 'center', justifyContent: 'center',
-    backgroundColor: NEU.bg,
-    shadowColor: NEU.darkShadow, shadowOffset: { width: 4, height: 4 },
-    shadowOpacity: 0.8, shadowRadius: 8, elevation: 4,
+    backgroundColor: THEME.offWhite,
+    shadowColor: THEME.darkShadow, shadowOffset: { width: -4, height: -4 },
+    shadowOpacity: 0.6, shadowRadius: 8, elevation: 3,
     borderTopWidth: 1, borderLeftWidth: 1,
-    borderTopColor: NEU.lightShadow, borderLeftColor: NEU.lightShadow,
+    borderTopColor: THEME.lightShadow, borderLeftColor: THEME.lightShadow,
   },
+
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    marginBottom: 16, paddingTop: 16,
+    marginBottom: 16, paddingTop: 12,
   },
   iconBtn: {
     width: 44, height: 44, borderRadius: 22,
     alignItems: 'center', justifyContent: 'center',
-    backgroundColor: NEU.bg,
-    shadowColor: NEU.darkShadow, shadowOffset: { width: 4, height: 4 },
-    shadowOpacity: 0.7, shadowRadius: 8, elevation: 4,
-    borderTopWidth: 1, borderLeftWidth: 1,
-    borderTopColor: NEU.lightShadow, borderLeftColor: NEU.lightShadow,
+    backgroundColor: THEME.white,
+    borderWidth: 1, borderColor: THEME.offWhiteDark,
+    shadowColor: THEME.darkShadow, shadowOffset: { width: 4, height: 4 },
+    shadowOpacity: 0.3, shadowRadius: 6, elevation: 3,
   },
-  title: { fontSize: 18, fontWeight: '700', color: NEU.text },
+  title: { fontSize: 18, fontWeight: '700', color: THEME.black },
 
-  summaryCard: {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: NEU.bg, borderRadius: 20, padding: 16, marginBottom: 16,
-    shadowColor: NEU.darkShadow, shadowOffset: { width: 6, height: 6 },
-    shadowOpacity: 0.6, shadowRadius: 12, elevation: 5,
-    borderTopWidth: 1, borderLeftWidth: 1,
-    borderTopColor: NEU.lightShadow, borderLeftColor: NEU.lightShadow,
+  // Info Card
+  infoCard: {
+    backgroundColor: THEME.white, borderRadius: 16, padding: 16, marginBottom: 16,
+    borderWidth: 1, borderColor: THEME.offWhiteDark,
+    shadowColor: THEME.darkShadow, shadowOffset: { width: 4, height: 4 },
+    shadowOpacity: 0.3, shadowRadius: 8, elevation: 3,
   },
-  summaryIcon: {
-    width: 44, height: 44, borderRadius: 22,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  summaryLabel: { fontSize: 11, color: NEU.textMuted },
-  summaryValue: { fontSize: 20, fontWeight: '800', color: NEU.text, marginTop: 2 },
+  infoHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
+  infoTitle: { fontSize: 15, fontWeight: '700', color: THEME.black },
+  infoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  infoCol: { width: '47%' },
+  infoLabel: { fontSize: 10, fontWeight: '700', color: THEME.gray, textTransform: 'uppercase' },
+  infoVal: { fontSize: 13, fontWeight: '600', color: THEME.black, marginTop: 2 },
 
-  subjectGroup: {
-    backgroundColor: NEU.bg, borderRadius: 20, marginBottom: 16, overflow: 'hidden',
-    shadowColor: NEU.darkShadow, shadowOffset: { width: 5, height: 5 },
-    shadowOpacity: 0.6, shadowRadius: 12, elevation: 5,
-    borderTopWidth: 1, borderLeftWidth: 1,
-    borderTopColor: NEU.lightShadow, borderLeftColor: NEU.lightShadow,
+  // Stats
+  statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20 },
+  statCard: {
+    width: '47%', backgroundColor: THEME.white, padding: 12, borderRadius: 14,
+    borderWidth: 1, borderColor: THEME.offWhiteDark,
   },
-  subjectHeader: {
-    flexDirection: 'row', alignItems: 'center', padding: 16, gap: 12,
-  },
-  subjectIcon: {
-    width: 40, height: 40, borderRadius: 20,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  subjectName: { fontSize: 15, fontWeight: '700', color: NEU.text },
-  subjectCode: { fontSize: 11, color: NEU.textMuted, marginTop: 2 },
-  rateBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10, marginRight: 4 },
-  rateText: { fontSize: 13, fontWeight: '700' },
+  statHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
+  statLabel: { fontSize: 10, fontWeight: '700', color: THEME.gray, letterSpacing: 0.5 },
+  statNum: { fontSize: 20, fontWeight: '800', color: THEME.royalBlue },
+  statSub: { fontSize: 10, color: THEME.gray, marginTop: 2 },
+  progressBarBg: { height: 4, backgroundColor: THEME.offWhiteDark, borderRadius: 2, marginTop: 6, overflow: 'hidden' },
+  progressBarFill: { height: '100%', backgroundColor: THEME.success, borderRadius: 2 },
 
-  subjectStats: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingVertical: 12, paddingHorizontal: 16,
-    borderTopWidth: 1, borderTopColor: NEU.bgDark,
+  // Today Card
+  todayCard: {
+    backgroundColor: THEME.white, borderRadius: 16, padding: 16, marginBottom: 20,
+    borderWidth: 1, borderColor: THEME.offWhiteDark,
   },
-  statItem: { flex: 1, alignItems: 'center' },
-  statValue: { fontSize: 18, fontWeight: '800' },
-  statLabel: { fontSize: 11, color: NEU.textMuted, marginTop: 2 },
-  statDivider: { width: 1, height: 30, backgroundColor: NEU.bgDark, opacity: 0.6 },
+  todayHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: THEME.offWhiteDark, paddingBottom: 12, marginBottom: 12 },
+  todayIconWrap: { width: 36, height: 36, borderRadius: 18, backgroundColor: THEME.royalBlue + '10', alignItems: 'center', justifyContent: 'center' },
+  todayTitle: { fontSize: 14, fontWeight: '700', color: THEME.black },
+  todaySub: { fontSize: 11, color: THEME.gray },
+  todayBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
+  todayBadgeText: { fontSize: 11, fontWeight: '700' },
+  todayBody: { paddingTop: 4 },
+  todayRemarksLabel: { fontSize: 11, fontWeight: '600', color: THEME.gray, marginBottom: 4 },
+  todayRemarksText: { fontSize: 13, color: THEME.darkGray, fontStyle: 'italic' },
 
-  recordsContainer: {
-    paddingHorizontal: 16, paddingBottom: 16,
-    borderTopWidth: 1, borderTopColor: NEU.bgDark,
+  // Section Title & Filters
+  sectionTitle: { fontSize: 16, fontWeight: '800', color: THEME.black, marginBottom: 12 },
+  filterRow: { marginBottom: 4 },
+  filterChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, backgroundColor: THEME.white, borderWidth: 1, borderColor: THEME.offWhiteDark, marginRight: 8 },
+  filterChipActive: { backgroundColor: THEME.royalBlue, borderColor: THEME.royalBlue },
+  filterChipText: { fontSize: 11, fontWeight: '600', color: THEME.darkGray },
+  filterChipTextActive: { color: THEME.white },
+  searchBox: {
+    flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: THEME.white,
+    borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, marginBottom: 16,
+    borderWidth: 1, borderColor: THEME.offWhiteDark,
   },
-  recordItem: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingVertical: 10,
-    borderBottomWidth: 1, borderBottomColor: 'rgba(209,217,230,0.5)',
-    gap: 12,
-  },
-  recordIcon: {
-    width: 30, height: 30, borderRadius: 15,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  recordDate: { fontSize: 13, fontWeight: '600', color: NEU.text },
-  recordRemarks: { fontSize: 11, color: NEU.textMuted, marginTop: 2 },
-  statusBadge: { paddingHorizontal: 10, paddingVertical: 2, borderRadius: 12 },
-  statusText: { fontSize: 11, fontWeight: '600' },
+  searchInput: { flex: 1, fontSize: 13, color: THEME.black },
 
+  // Records
+  recordCard: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: THEME.white, borderRadius: 14, padding: 14, marginBottom: 8,
+    borderWidth: 1, borderColor: THEME.offWhiteDark,
+  },
+  recordLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
+  statusIconWrap: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  recordDate: { fontSize: 13, fontWeight: '700', color: THEME.black },
+  recordDay: { fontSize: 11, color: THEME.gray },
+  recordRight: { alignItems: 'flex-end' },
+  statusBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8, marginBottom: 4 },
+  statusBadgeText: { fontSize: 10, fontWeight: '700' },
+  recordRemarks: { fontSize: 10, color: THEME.gray, maxWidth: 120 },
+
+  // Empty
   emptyContainer: {
-    alignItems: 'center', padding: 40,
-    backgroundColor: NEU.bg, borderRadius: 20,
-    shadowColor: NEU.darkShadow, shadowOffset: { width: 6, height: 6 },
-    shadowOpacity: 0.6, shadowRadius: 12, elevation: 5,
-    borderTopWidth: 1, borderLeftWidth: 1,
-    borderTopColor: NEU.lightShadow, borderLeftColor: NEU.lightShadow,
+    alignItems: 'center', padding: 40, backgroundColor: THEME.white, borderRadius: 16,
+    borderWidth: 1, borderColor: THEME.offWhiteDark,
   },
-  emptyText: { fontSize: 15, color: NEU.textMuted, marginTop: 16, fontWeight: '600' },
-  emptySubtext: {
-    fontSize: 13, color: NEU.textFaint, textAlign: 'center', marginTop: 4,
-  },
-  retryButton: {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: NEU.bg, paddingHorizontal: 24, paddingVertical: 10,
-    borderRadius: 12, marginTop: 16, gap: 6,
-    shadowColor: NEU.darkShadow, shadowOffset: { width: 3, height: 3 },
-    shadowOpacity: 0.6, shadowRadius: 6, elevation: 3,
-    borderTopWidth: 1, borderLeftWidth: 1,
-    borderTopColor: NEU.lightShadow, borderLeftColor: NEU.lightShadow,
-  },
-  retryButtonText: { fontSize: 13, fontWeight: '700' },
+  emptyText: { fontSize: 16, fontWeight: '700', color: THEME.black, marginTop: 12 },
+  emptySub: { fontSize: 13, color: THEME.gray, textAlign: 'center', marginTop: 4 },
 });
