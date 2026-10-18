@@ -54,12 +54,9 @@
       "typedRoutes": true
     },
     "extra": {
-      "supabaseUrl": "https://tuujlqrfyuazvbvoribz.supabase.co",
-      "supabaseAnonKey": "sb_publishable_dYaVB2zNcNNj5gwjzJ4ZRw_N55Djq0D",
-      "router": {},
-      "eas": {
-        "projectId": "3595ece9-dff7-436b-95fd-171e2622a322"
-      }
-    }
+  "supabaseUrl": "https://tuujlqrfyuazvbvoribz.supabase.co",
+  "supabaseAnonKey": "sb_publishable_dYaVB2zNcNNj5gwjzJ4ZRw_N55Djq0D",
+  "router": {}
+}
   }
 }
